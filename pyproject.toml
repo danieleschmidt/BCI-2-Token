@@ -1,0 +1,158 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bci2token"
+version = "0.1.0"
+description = "Brain-Computer Interface to Token Translator"
+readme = "README.md"
+authors = [
+    {name = "Terragon Labs", email = "contact@terragonlabs.com"}
+]
+license = {text = "Apache-2.0"}
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Healthcare Industry",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Scientific/Engineering :: Medical Science Apps.",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Operating System :: OS Independent",
+]
+keywords = [
+    "brain-computer interface",
+    "BCI",
+    "EEG",
+    "ECoG", 
+    "neural decoding",
+    "language models",
+    "LLM",
+    "tokenization",
+    "differential privacy",
+    "real-time processing"
+]
+requires-python = ">=3.9"
+dependencies = [
+    "torch>=2.0.0",
+    "numpy>=1.21.0",
+    "scipy>=1.7.0",
+    "transformers>=4.20.0",
+    "tiktoken>=0.4.0",
+    "tqdm>=4.64.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0", 
+    "black>=22.0.0",
+    "isort>=5.10.0",
+    "flake8>=5.0.0",
+]
+devices = [
+    "pyserial>=3.5",
+    "pylsl>=1.16.0",
+]
+privacy = [
+    "opacus>=1.4.0",
+]
+signal = [
+    "mne>=1.5.0",
+    "scikit-learn>=1.1.0",
+    "matplotlib>=3.5.0",
+]
+realtime = [
+    "pyserial>=3.5",
+    "pylsl>=1.16.0", 
+    "mne>=1.5.0",
+]
+all = [
+    "mne>=1.5.0",
+    "pyserial>=3.5",
+    "pylsl>=1.16.0",
+    "opacus>=1.4.0",
+    "scikit-learn>=1.1.0",
+    "matplotlib>=3.5.0",
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "black>=22.0.0",
+    "isort>=5.10.0", 
+    "flake8>=5.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/terragon-labs/bci-2-token"
+Documentation = "https://bci2token.readthedocs.io/"
+Repository = "https://github.com/terragon-labs/bci-2-token"
+"Bug Tracker" = "https://github.com/terragon-labs/bci-2-token/issues"
+
+[project.scripts]
+bci2token = "bci2token.cli:main"
+
+[tool.setuptools.packages.find]
+exclude = ["tests*", "examples*", "docs*"]
+
+[tool.black]
+line-length = 88
+target-version = ['py39']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+line_length = 88
+known_first_party = ["bci2token"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+    "--cov=bci2token",
+    "--cov-report=term-missing",
+    "--cov-report=html",
+    "--cov-report=xml",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
+]
+
+[tool.coverage.run]
+source = ["bci2token"]
+omit = [
+    "*/tests/*",
+    "*/test_*.py",
+    "setup.py",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]
