@@ -1,0 +1,514 @@
+name: 🧠 BCI-2-Token CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop, 'feature/*', 'hotfix/*' ]
+  pull_request:
+    branches: [ main, develop ]
+  release:
+    types: [ published ]
+
+env:
+  PYTHON_VERSION: "3.9"
+  PYTORCH_VERSION: "2.0.0"
+  
+jobs:
+  # ============================================================================
+  # Code Quality & Static Analysis
+  # ============================================================================
+  code-quality:
+    name: 🔍 Code Quality & Static Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📦 Checkout code
+        uses: actions/checkout@v4
+        
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          
+      - name: 📥 Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install ruff black mypy pre-commit
+          pip install -e .[dev]
+          
+      - name: 🎨 Check code formatting (Black)
+        run: black --check --diff src/ tests/
+        
+      - name: 🧹 Lint code (Ruff)
+        run: ruff check src/ tests/
+        
+      - name: 🔍 Type checking (MyPy)
+        run: mypy src/bci2token/
+        
+      - name: 🛡️ Security scan (Bandit)
+        run: |
+          pip install bandit[toml]
+          bandit -r src/ -f json -o bandit-report.json
+          
+      - name: 📊 Upload security scan results
+        uses: actions/upload-artifact@v3
+        with:
+          name: security-scan-results
+          path: bandit-report.json
+
+  # ============================================================================
+  # Unit Tests - Multiple Python Versions & Platforms
+  # ============================================================================
+  unit-tests:
+    name: 🧪 Unit Tests
+    needs: code-quality
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ["3.9", "3.10", "3.11"]
+        pytorch-cpu: ["2.0.0", "2.1.0"]
+        exclude:
+          # Reduce matrix size for faster builds
+          - os: windows-latest
+            python-version: "3.10"
+          - os: macos-latest
+            python-version: "3.10"
+            
+    runs-on: ${{ matrix.os }}
+    
+    steps:
+      - name: 📦 Checkout code
+        uses: actions/checkout@v4
+        
+      - name: 🐍 Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+          
+      - name: 💾 Cache pip dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/pyproject.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+            
+      - name: 📥 Install PyTorch CPU
+        run: |
+          pip install torch==${{ matrix.pytorch-cpu }} --index-url https://download.pytorch.org/whl/cpu
+          
+      - name: 📥 Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .[dev]
+          
+      - name: 🧪 Run unit tests
+        run: |
+          pytest tests/ -v \
+            --cov=bci2token \
+            --cov-report=xml \
+            --cov-report=html \
+            --cov-report=term-missing \
+            --junitxml=test-results.xml \
+            -m "unit and not slow"
+            
+      - name: 📊 Upload test results
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: test-results-${{ matrix.os }}-py${{ matrix.python-version }}
+          path: |
+            test-results.xml
+            htmlcov/
+            
+      - name: ☂️ Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage.xml
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: false
+
+  # ============================================================================
+  # Integration Tests
+  # ============================================================================
+  integration-tests:
+    name: 🔗 Integration Tests
+    needs: unit-tests
+    runs-on: ubuntu-latest
+    
+    services:
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    
+    steps:
+      - name: 📦 Checkout code
+        uses: actions/checkout@v4
+        
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          
+      - name: 📥 Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -e .[dev,realtime]
+          
+      - name: 🔗 Run integration tests
+        run: |
+          pytest tests/ -v \
+            --cov=bci2token \
+            --cov-report=xml \
+            --junitxml=integration-test-results.xml \
+            -m "integration" \
+            --durations=10
+            
+      - name: 📊 Upload integration test results
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: integration-test-results
+          path: integration-test-results.xml
+
+  # ============================================================================
+  # Performance Tests
+  # ============================================================================
+  performance-tests:
+    name: ⚡ Performance Tests
+    needs: unit-tests
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📦 Checkout code
+        uses: actions/checkout@v4
+        
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          
+      - name: 📥 Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -e .[dev]
+          pip install pytest-benchmark memory-profiler
+          
+      - name: ⚡ Run performance tests
+        run: |
+          pytest tests/ -v \
+            --benchmark-only \
+            --benchmark-json=benchmark-results.json \
+            -m "performance"
+            
+      - name: 📊 Upload performance results
+        uses: actions/upload-artifact@v3
+        with:
+          name: performance-results
+          path: benchmark-results.json
+
+  # ============================================================================
+  # Security Tests
+  # ============================================================================
+  security-tests:
+    name: 🛡️ Security Tests
+    needs: code-quality
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📦 Checkout code
+        uses: actions/checkout@v4
+        
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          
+      - name: 📥 Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -e .[dev]
+          pip install safety pip-audit
+          
+      - name: 🔒 Check for known vulnerabilities (Safety)
+        run: safety check --json --output safety-report.json
+        continue-on-error: true
+        
+      - name: 🔍 Audit dependencies (pip-audit)
+        run: pip-audit --format=json --output=pip-audit-report.json
+        continue-on-error: true
+        
+      - name: 🛡️ Run security tests
+        run: |
+          pytest tests/ -v \
+            --junitxml=security-test-results.xml \
+            -m "security"
+            
+      - name: 📊 Upload security test results
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: security-test-results
+          path: |
+            security-test-results.xml
+            safety-report.json
+            pip-audit-report.json
+
+  # ============================================================================
+  # End-to-End Tests
+  # ============================================================================
+  e2e-tests:
+    name: 🎯 End-to-End Tests
+    needs: [integration-tests, performance-tests]
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📦 Checkout code
+        uses: actions/checkout@v4
+        
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          
+      - name: 📥 Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -e .[dev,realtime]
+          
+      - name: 📁 Create test data
+        run: |
+          mkdir -p test_data
+          python -c "
+          import numpy as np
+          # Generate sample EEG data
+          eeg_data = np.random.randn(64, 1000)
+          np.save('test_data/sample_eeg.npy', eeg_data)
+          # Generate sample ECoG data
+          ecog_data = np.random.randn(128, 2000)
+          np.save('test_data/sample_ecog.npy', ecog_data)
+          "
+          
+      - name: 🎯 Run end-to-end tests
+        run: |
+          pytest tests/ -v \
+            --junitxml=e2e-test-results.xml \
+            -m "e2e" \
+            --tb=short
+            
+      - name: 📊 Upload E2E test results
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: e2e-test-results
+          path: e2e-test-results.xml
+
+  # ============================================================================
+  # Build & Package
+  # ============================================================================
+  build:
+    name: 📦 Build & Package
+    needs: [unit-tests, integration-tests]
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📦 Checkout code
+        uses: actions/checkout@v4
+        
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          
+      - name: 📥 Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install build twine
+          
+      - name: 🏗️ Build package
+        run: python -m build
+        
+      - name: ✅ Check package
+        run: twine check dist/*
+        
+      - name: 📊 Upload build artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: dist-packages
+          path: dist/
+
+  # ============================================================================
+  # Documentation
+  # ============================================================================
+  docs:
+    name: 📚 Documentation
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📦 Checkout code
+        uses: actions/checkout@v4
+        
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          
+      - name: 📥 Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -e .[dev]
+          pip install sphinx sphinx-rtd-theme sphinxcontrib-napoleon
+          
+      - name: 📚 Build documentation
+        run: |
+          cd docs
+          make html
+          
+      - name: 📊 Upload documentation
+        uses: actions/upload-artifact@v3
+        with:
+          name: documentation
+          path: docs/_build/html/
+
+  # ============================================================================
+  # Docker Build
+  # ============================================================================
+  docker:
+    name: 🐳 Docker Build
+    needs: build
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📦 Checkout code
+        uses: actions/checkout@v4
+        
+      - name: 🐳 Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        
+      - name: 🔑 Log in to Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: 📊 Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha
+            
+      - name: 🏗️ Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ============================================================================
+  # Deployment to Staging
+  # ============================================================================
+  deploy-staging:
+    name: 🚀 Deploy to Staging
+    needs: [e2e-tests, security-tests, docker]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/develop'
+    
+    environment:
+      name: staging
+      url: https://staging.bci2token.dev
+      
+    steps:
+      - name: 📦 Checkout code
+        uses: actions/checkout@v4
+        
+      - name: 🚀 Deploy to staging
+        run: |
+          echo "🚀 Deploying to staging environment..."
+          # Placeholder for actual deployment logic
+          # This would typically involve:
+          # - Updating Kubernetes manifests
+          # - Rolling out new image version
+          # - Running smoke tests
+          
+      - name: ✅ Verify deployment
+        run: |
+          echo "✅ Verifying staging deployment..."
+          # Placeholder for deployment verification
+          # This would typically involve:
+          # - Health checks
+          # - Basic functionality tests
+          # - Performance monitoring
+
+  # ============================================================================
+  # Deployment to Production
+  # ============================================================================
+  deploy-production:
+    name: 🌟 Deploy to Production
+    needs: [e2e-tests, security-tests, docker]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'release'
+    
+    environment:
+      name: production
+      url: https://bci2token.dev
+      
+    steps:
+      - name: 📦 Checkout code
+        uses: actions/checkout@v4
+        
+      - name: 🌟 Deploy to production
+        run: |
+          echo "🌟 Deploying to production environment..."
+          # Placeholder for actual production deployment
+          
+      - name: ✅ Verify production deployment
+        run: |
+          echo "✅ Verifying production deployment..."
+          # Placeholder for production verification
+
+  # ============================================================================
+  # Notification & Reporting
+  # ============================================================================
+  notify:
+    name: 📢 Notify & Report
+    needs: [deploy-staging, deploy-production]
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+      - name: 📊 Generate workflow summary
+        run: |
+          echo "## 🧠 BCI-2-Token CI/CD Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- **Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Author:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status:** ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+          
+      - name: 📧 Send notification
+        if: failure()
+        run: |
+          echo "📧 Sending failure notification..."
+          # Placeholder for notification logic (Slack, email, etc.)
