@@ -1,3 +1,11 @@
+# 🧠 BCI-2-Token CI/CD Pipeline Configuration
+# 
+# This file contains the GitHub Actions workflow configuration.
+# To use this workflow, copy it to .github/workflows/ci.yml in your repository.
+# 
+# Note: This file is stored outside .github/workflows/ to avoid permission issues
+# with GitHub Apps that don't have 'workflows' permission.
+
 name: 🧠 BCI-2-Token CI/CD Pipeline
 
 on:

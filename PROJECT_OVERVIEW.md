@@ -110,8 +110,9 @@ bci-2-token/
 │   ├── basic_usage.py               # Basic BCI functionality demo
 │   └── agent_workflow_demo.py       # AI agent workflow demo
 │
-├── .github/workflows/               # 🚀 CI/CD Pipeline
-│   └── ci.yml                       # Comprehensive GitHub Actions
+├── ci-cd/                           # 🚀 CI/CD Configuration
+│   ├── github-actions-ci.yml        # Complete GitHub Actions workflow
+│   └── README.md                    # CI/CD setup instructions
 │
 └── docs/                           # 📚 Documentation
     └── (auto-generated)             # Sphinx documentation
