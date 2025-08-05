@@ -1,0 +1,272 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bci2token-app
+  namespace: bci2token
+  labels:
+    app: bci2token
+    component: app
+    version: v1.0.0
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: bci2token
+      component: app
+  template:
+    metadata:
+      labels:
+        app: bci2token
+        component: app
+        version: v1.0.0
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: bci2token
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+      - name: bci2token
+        image: bci2token:v1.0.0
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        - containerPort: 8443
+          name: https
+          protocol: TCP
+        env:
+        - name: BCI2TOKEN_ENVIRONMENT
+          value: "production"
+        - name: BCI2TOKEN_LOG_LEVEL
+          value: "INFO"
+        - name: BCI2TOKEN_CACHE_SIZE
+          value: "10000"
+        - name: BCI2TOKEN_MAX_THREADS
+          value: "8"
+        - name: BCI2TOKEN_MAX_PROCESSES
+          value: "4"
+        - name: BCI2TOKEN_DATA_DIR
+          value: "/var/lib/bci2token"
+        - name: BCI2TOKEN_LOG_DIR
+          value: "/var/log/bci2token"
+        - name: BCI2TOKEN_CACHE_DIR
+          value: "/var/cache/bci2token"
+        - name: BCI2TOKEN_DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: bci2token-secrets
+              key: database-url
+              optional: true
+        - name: BCI2TOKEN_TELEMETRY_ENDPOINT
+          valueFrom:
+            configMapKeyRef:
+              name: bci2token-config
+              key: telemetry-endpoint
+              optional: true
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "1000m"
+          limits:
+            memory: "4Gi"
+            cpu: "2000m"
+        volumeMounts:
+        - name: data-volume
+          mountPath: /var/lib/bci2token
+        - name: log-volume
+          mountPath: /var/log/bci2token
+        - name: cache-volume
+          mountPath: /var/cache/bci2token
+        - name: config-volume
+          mountPath: /app/config
+          readOnly: true
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        startupProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 10
+      volumes:
+      - name: data-volume
+        persistentVolumeClaim:
+          claimName: bci2token-data-pvc
+      - name: log-volume
+        persistentVolumeClaim:
+          claimName: bci2token-logs-pvc
+      - name: cache-volume
+        emptyDir:
+          sizeLimit: 10Gi
+      - name: config-volume
+        configMap:
+          name: bci2token-config
+      nodeSelector:
+        node-type: compute
+      tolerations:
+      - key: "compute-intensive"
+        operator: "Equal"
+        value: "true"
+        effect: "NoSchedule"
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - bci2token
+              topologyKey: kubernetes.io/hostname
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: bci2token-service
+  namespace: bci2token
+  labels:
+    app: bci2token
+    component: app
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  - port: 443
+    targetPort: 8443
+    protocol: TCP
+    name: https
+  selector:
+    app: bci2token
+    component: app
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: bci2token-ingress
+  namespace: bci2token
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+spec:
+  tls:
+  - hosts:
+    - api.bci2token.com
+    secretName: bci2token-tls
+  rules:
+  - host: api.bci2token.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: bci2token-service
+            port:
+              number: 80
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: bci2token-hpa
+  namespace: bci2token
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: bci2token-app
+  minReplicas: 2
+  maxReplicas: 20
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 15
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 10
+        periodSeconds: 60
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: bci2token-data-pvc
+  namespace: bci2token
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 100Gi
+  storageClassName: fast-ssd
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: bci2token-logs-pvc
+  namespace: bci2token
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 50Gi
+  storageClassName: standard

@@ -1,0 +1,97 @@
+{
+  "timestamp": 1754399566.4570608,
+  "overall_status": "FAIL",
+  "summary": {
+    "total_gates": 7,
+    "passed": 2,
+    "warnings": 2,
+    "failed": 3,
+    "critical": 0,
+    "total_duration": 1.238312005996704
+  },
+  "gate_results": {
+    "import_validation": {
+      "level": "warning",
+      "message": "Optional dependencies missing: 1 modules",
+      "duration": 0.0690605640411377,
+      "details": {
+        "warning_imports": [
+          [
+            "bci2token.cli",
+            "No module named 'torch'"
+          ]
+        ],
+        "total_tested": 11
+      }
+    },
+    "unit_tests": {
+      "level": "pass",
+      "message": "All unit tests passed",
+      "duration": 0.7610323429107666,
+      "details": {
+        "exit_code": 0,
+        "stdout": "25-08-05 13:12:45] INFO     | Test            | Test message\n   \u2713 Logger creation and basic logging\n   \u2713 Metrics collection\n\nTesting signal processing...\n   \u2713 Signal quality calculation: 0.050\n   \u2713 Artifact detection\n   \u2713 Preprocessor creation\n\n==================================================\nResults: 16 passed, 0 failed\n\ud83c\udf89 All basic tests passed!\n\nNext steps:\n1. Install PyTorch: pip install torch\n2. Install transformers: pip install transformers\n3. Run full test suite: python -m pytest tests/\n",
+        "test_runner": "test_basic.py"
+      }
+    },
+    "security_validation": {
+      "level": "warning",
+      "message": "Security warnings found: 1 issues",
+      "duration": 0.00010657310485839844,
+      "details": {
+        "warnings": [
+          "Rate limiting may be too permissive"
+        ]
+      }
+    },
+    "performance_benchmarks": {
+      "level": "fail",
+      "message": "Performance benchmarks failed: 1 issues",
+      "duration": 0.0035097599029541016,
+      "details": {
+        "issues": [
+          "Performance testing error: No workers available"
+        ],
+        "benchmarks": {}
+      }
+    },
+    "reliability_validation": {
+      "level": "fail",
+      "message": "Reliability validation failed: 1 issues",
+      "duration": 2.2411346435546875e-05,
+      "details": {
+        "issues": [
+          "Reliability testing error: CircuitBreaker.__init__() got an unexpected keyword argument 'failure_threshold'"
+        ],
+        "checks_passed": 0
+      }
+    },
+    "configuration_validation": {
+      "level": "pass",
+      "message": "Configuration validation passed (4 configs)",
+      "duration": 4.267692565917969e-05,
+      "details": {
+        "configs_tested": 4
+      }
+    },
+    "integration_validation": {
+      "level": "fail",
+      "message": "Integration validation failed: 1 issues",
+      "duration": 0.4045376777648926,
+      "details": {
+        "issues": [
+          "Integration testing error: No module named 'torch'"
+        ],
+        "integrations_tested": 3
+      }
+    }
+  },
+  "recommendations": [
+    "MEDIUM: Review warning in import_validation - Optional dependencies missing: 1 modules",
+    "MEDIUM: Review warning in security_validation - Security warnings found: 1 issues",
+    "HIGH: Address failure in performance_benchmarks - Performance benchmarks failed: 1 issues",
+    "HIGH: Address failure in reliability_validation - Reliability validation failed: 1 issues",
+    "HIGH: Address failure in integration_validation - Integration validation failed: 1 issues",
+    "Significant quality issues detected - not ready for production"
+  ]
+}

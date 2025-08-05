@@ -184,6 +184,10 @@ class StreamingDecoder:
         """Set callback for new text."""
         self.text_callback = callback
         
+    def start_session(self):
+        """Start a streaming session and return session context manager."""
+        return StreamingSession(self)
+        
     def start_streaming(self):
         """Start streaming processing."""
         if self.is_streaming:
