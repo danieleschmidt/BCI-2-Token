@@ -1,0 +1,134 @@
+version: '3.8'
+
+services:
+  bci2token:
+    build:
+      context: ../..
+      dockerfile: deployment/docker/Dockerfile
+    container_name: bci2token-app
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+      - "8443:8443"
+    environment:
+      - BCI2TOKEN_ENVIRONMENT=production
+      - BCI2TOKEN_LOG_LEVEL=INFO
+      - BCI2TOKEN_CACHE_SIZE=10000
+      - BCI2TOKEN_MAX_THREADS=8
+      - BCI2TOKEN_MAX_PROCESSES=4
+      - BCI2TOKEN_MIN_INSTANCES=2
+      - BCI2TOKEN_MAX_INSTANCES=10
+    volumes:
+      - bci2token-data:/var/lib/bci2token
+      - bci2token-logs:/var/log/bci2token
+      - bci2token-cache:/var/cache/bci2token
+      - ./config:/app/config:ro
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '2.0'
+        reservations:
+          memory: 2G
+          cpus: '1.0'
+    networks:
+      - bci2token-net
+
+  redis:
+    image: redis:7-alpine
+    container_name: bci2token-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis-data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - bci2token-net
+
+  nginx:
+    image: nginx:alpine
+    container_name: bci2token-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - nginx-logs:/var/log/nginx
+    depends_on:
+      - bci2token
+    networks:
+      - bci2token-net
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: bci2token-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.enable-lifecycle'
+    networks:
+      - bci2token-net
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: bci2token-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin123
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./grafana/datasources:/etc/grafana/provisioning/datasources:ro
+    depends_on:
+      - prometheus
+    networks:
+      - bci2token-net
+
+volumes:
+  bci2token-data:
+    driver: local
+  bci2token-logs:
+    driver: local
+  bci2token-cache:
+    driver: local
+  redis-data:
+    driver: local
+  nginx-logs:
+    driver: local
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local
+
+networks:
+  bci2token-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

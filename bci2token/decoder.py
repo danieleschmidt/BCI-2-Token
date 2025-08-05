@@ -6,6 +6,7 @@ into a unified interface for brain-to-token decoding.
 """
 
 import torch
+import torch.nn.functional as F
 import numpy as np
 from typing import Optional, List, Dict, Any, Union
 from pathlib import Path
@@ -14,6 +15,19 @@ import warnings
 from .preprocessing import SignalPreprocessor, PreprocessingConfig
 from .models import BrainToTokenModel, ModelConfig
 from .privacy import PrivacyEngine
+from .utils import validate_signal_shape, SignalProcessingError
+from .monitoring import get_monitor
+
+
+class _DummyContext:
+    """Dummy context manager for when performance timer not available."""
+    def __enter__(self):
+        return self
+    def __exit__(self, *args):
+        pass
+
+def _dummy_context():
+    return _DummyContext()
 
 
 class BrainDecoder:
@@ -89,7 +103,7 @@ class BrainDecoder:
                           raw_signals: np.ndarray,
                           channel_names: Optional[List[str]] = None) -> Dict[str, Any]:
         """
-        Preprocess raw brain signals.
+        Preprocess raw brain signals with comprehensive error handling.
         
         Args:
             raw_signals: Raw signal data (channels, timepoints)
@@ -97,23 +111,61 @@ class BrainDecoder:
             
         Returns:
             Dictionary with preprocessed data and metadata
+            
+        Raises:
+            SignalProcessingError: If signal validation fails
         """
-        if raw_signals.shape[0] != self.channels:
-            raise ValueError(f"Expected {self.channels} channels, got {raw_signals.shape[0]}")
-            
-        # Apply preprocessing pipeline
-        processed = self.preprocessor.preprocess(raw_signals, channel_names)
+        monitor = get_monitor()
         
-        # Apply privacy protection if enabled
-        if self.privacy_engine is not None:
-            processed['processed_data'] = self.privacy_engine.add_noise(
-                processed['processed_data']
-            )
-            processed['epochs'] = self.privacy_engine.add_noise(
-                processed['epochs']
+        try:
+            # Validate input signal
+            validate_signal_shape(raw_signals, self.channels, min_timepoints=10)
+            
+            # Log preprocessing start
+            monitor.logger.debug(
+                'Decoder',
+                f'Preprocessing signal: {raw_signals.shape}',
+                {'channels': raw_signals.shape[0], 'timepoints': raw_signals.shape[1]}
             )
             
-        return processed
+            # Apply preprocessing pipeline
+            with monitor.performance_timer('preprocessing') if hasattr(monitor, 'performance_timer') else _dummy_context():
+                processed = self.preprocessor.preprocess(raw_signals, channel_names)
+            
+            # Apply privacy protection if enabled
+            if self.privacy_engine is not None:
+                try:
+                    processed['processed_data'] = self.privacy_engine.add_noise(
+                        processed['processed_data']
+                    )
+                    processed['epochs'] = self.privacy_engine.add_noise(
+                        processed['epochs']
+                    )
+                    
+                    monitor.logger.debug(
+                        'Privacy',
+                        f'Applied DP noise: ε={self.privacy_epsilon}',
+                        {'epsilon': self.privacy_epsilon}
+                    )
+                except Exception as e:
+                    monitor.log_error('Privacy', e, {'signal_shape': raw_signals.shape})
+                    raise SignalProcessingError(f"Privacy protection failed: {e}") from e
+            
+            # Log successful preprocessing
+            monitor.logger.debug(
+                'Decoder',
+                f'Preprocessing completed: {len(processed["epochs"])} epochs',
+                {'input_shape': raw_signals.shape, 'epochs_created': len(processed["epochs"])}
+            )
+            
+            return processed
+            
+        except Exception as e:
+            monitor.log_error('Decoder', e, {'operation': 'preprocess_signals'})
+            if isinstance(e, SignalProcessingError):
+                raise
+            else:
+                raise SignalProcessingError(f"Preprocessing failed: {e}") from e
         
     def decode_to_tokens(self, 
                         brain_signals: np.ndarray,
