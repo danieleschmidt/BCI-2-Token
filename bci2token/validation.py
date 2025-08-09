@@ -392,72 +392,8 @@ class InputSanitizer:
         return sanitized
 
 
-class CircuitBreaker:
-    """Circuit breaker pattern for fault tolerance"""
-    
-    def __init__(self, failure_threshold: int = 5, 
-                 recovery_timeout: float = 60.0,
-                 success_threshold: int = 3):
-        self.failure_threshold = failure_threshold
-        self.recovery_timeout = recovery_timeout
-        self.success_threshold = success_threshold
-        
-        self.failure_count = 0
-        self.success_count = 0
-        self.last_failure_time = 0
-        self.state = "closed"  # closed, open, half-open
-        
-        self.logger = logging.getLogger(__name__)
-    
-    def call(self, func: Callable, *args, **kwargs) -> Any:
-        """Execute function through circuit breaker"""
-        
-        if self.state == "open":
-            if time.time() - self.last_failure_time < self.recovery_timeout:
-                raise RuntimeError("Circuit breaker is OPEN - service unavailable")
-            else:
-                self.state = "half-open"
-                self.success_count = 0
-                self.logger.info("Circuit breaker entering HALF-OPEN state")
-        
-        try:
-            result = func(*args, **kwargs)
-            self._on_success()
-            return result
-            
-        except Exception as e:
-            self._on_failure()
-            raise e
-    
-    def _on_success(self):
-        """Handle successful execution"""
-        if self.state == "half-open":
-            self.success_count += 1
-            if self.success_count >= self.success_threshold:
-                self.state = "closed"
-                self.failure_count = 0
-                self.logger.info("Circuit breaker returned to CLOSED state")
-        elif self.state == "closed":
-            self.failure_count = max(0, self.failure_count - 1)
-    
-    def _on_failure(self):
-        """Handle failed execution"""
-        self.failure_count += 1
-        self.last_failure_time = time.time()
-        
-        if self.failure_count >= self.failure_threshold:
-            self.state = "open"
-            self.logger.warning(f"Circuit breaker OPENED after {self.failure_count} failures")
-    
-    def get_state(self) -> Dict[str, Any]:
-        """Get circuit breaker state information"""
-        return {
-            "state": self.state,
-            "failure_count": self.failure_count,
-            "success_count": self.success_count,
-            "last_failure_time": self.last_failure_time,
-            "time_until_retry": max(0, self.recovery_timeout - (time.time() - self.last_failure_time))
-        }
+# CircuitBreaker moved to reliability.py for consistency
+from .reliability import CircuitBreaker, CircuitBreakerConfig
 
 
 def validate_bci_pipeline_input(signals: np.ndarray, 
@@ -579,7 +515,9 @@ def demo_validation_system():
     # 4. Circuit Breaker Demo
     print("\n4. Circuit Breaker Pattern")
     
-    circuit_breaker = CircuitBreaker(failure_threshold=3, recovery_timeout=1.0)
+    from .reliability import CircuitBreakerConfig
+    config = CircuitBreakerConfig(failure_threshold=3, recovery_timeout=1.0)
+    circuit_breaker = CircuitBreaker("test_service", config)
     
     def failing_service():
         if np.random.random() > 0.7:  # 30% success rate

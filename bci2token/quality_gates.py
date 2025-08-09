@@ -377,7 +377,9 @@ class ReliabilityQualityGate(QualityGate):
             # Test circuit breaker
             from bci2token.reliability import CircuitBreaker
             
-            circuit_breaker = CircuitBreaker(failure_threshold=3, timeout=1.0)
+            from bci2token.reliability import CircuitBreakerConfig
+            config = CircuitBreakerConfig(failure_threshold=3, timeout=1.0)
+            circuit_breaker = CircuitBreaker("test_reliability", config)
             
             # Test circuit breaker functionality
             def failing_function():
