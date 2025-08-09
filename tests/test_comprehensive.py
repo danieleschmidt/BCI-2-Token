@@ -325,7 +325,9 @@ class ComprehensiveTestSuite:
         from bci2token.recovery import SelfHealingSystem
         
         # Test circuit breaker
-        circuit_breaker = CircuitBreaker(failure_threshold=3, timeout=1.0)
+        from bci2token.reliability import CircuitBreakerConfig
+        config = CircuitBreakerConfig(failure_threshold=3, timeout=1.0)
+        circuit_breaker = CircuitBreaker("test_comprehensive", config)
         
         def failing_function():
             raise RuntimeError("Test failure")

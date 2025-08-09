@@ -102,7 +102,9 @@ def test_validation_system():
         assert np.isfinite(clean_signals).all()
         
         # Test circuit breaker
-        circuit_breaker = CircuitBreaker(failure_threshold=2)
+        from bci2token.reliability import CircuitBreakerConfig
+        config = CircuitBreakerConfig(failure_threshold=2)
+        circuit_breaker = CircuitBreaker("test_circuit", config)
         
         def failing_function():
             raise RuntimeError("Test failure")
@@ -112,7 +114,7 @@ def test_validation_system():
         for _ in range(5):
             try:
                 circuit_breaker.call(failing_function)
-            except RuntimeError:
+            except Exception:
                 failure_count += 1
         
         assert failure_count > 0
