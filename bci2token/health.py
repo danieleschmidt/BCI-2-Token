@@ -48,19 +48,39 @@ class SystemDiagnostics:
     
     def __init__(self):
         self.checks = {}
+        self.auto_recovery_enabled = True
+        self.recovery_actions = {}
+        
+    def add_recovery_action(self, check_name: str, action: Callable):
+        """Add automatic recovery action for a specific check."""
+        self.recovery_actions[check_name] = action
         
     def register_check(self, name: str, check_func: Callable[[], HealthCheck]):
         """Register a health check function."""
         self.checks[name] = check_func
         
     def run_all_checks(self) -> Dict[str, HealthCheck]:
-        """Run all registered health checks."""
+        """Run all registered health checks with auto-recovery."""
         results = {}
         
         for name, check_func in self.checks.items():
             try:
                 result = check_func()
                 results[name] = result
+                
+                # Attempt auto-recovery for critical issues
+                if (self.auto_recovery_enabled and 
+                    result.level == HealthLevel.CRITICAL and 
+                    name in self.recovery_actions):
+                    try:
+                        self.recovery_actions[name]()
+                        # Re-run check after recovery attempt
+                        result = check_func()
+                        result.message += " (auto-recovery attempted)"
+                        results[name] = result
+                    except Exception as recovery_error:
+                        result.message += f" (auto-recovery failed: {recovery_error})"
+                        
             except Exception as e:
                 results[name] = HealthCheck(
                     name=name,

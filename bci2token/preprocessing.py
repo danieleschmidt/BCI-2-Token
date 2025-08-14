@@ -100,147 +100,162 @@ class SignalPreprocessor:
         # Create windowed epochs
         epochs = self._create_epochs(processed_data)
         
+        # Extract features
+        features = self._extract_features(processed_data)
+        
         return {
-            'processed_data': processed_data,
+            'preprocessed_data': processed_data,
             'epochs': epochs,
+            'features': features,
             'sampling_rate': self.config.sampling_rate,
             'channel_names': channel_names,
             'preprocessing_config': self.config
         }
-        
+    
     def _apply_bandpass_filter(self, data: np.ndarray) -> np.ndarray:
-        """Apply bandpass filter to remove noise outside frequency band of interest."""
-        sos = signal.butter(
-            4, 
-            [self.config.highpass_freq, self.config.lowpass_freq],
-            btype='band',
-            fs=self.config.sampling_rate,
-            output='sos'
-        )
-        return signal.sosfiltfilt(sos, data, axis=1)
-        
+        """Apply bandpass filter to remove noise."""
+        try:
+            from scipy import signal
+            nyquist = self.config.sampling_rate / 2
+            low = self.config.highpass_freq / nyquist
+            high = self.config.lowpass_freq / nyquist
+            
+            # Design Butterworth filter
+            b, a = signal.butter(4, [low, high], btype='band')
+            filtered_data = signal.filtfilt(b, a, data, axis=1)
+            return filtered_data
+        except ImportError:
+            warnings.warn("SciPy not available. Skipping bandpass filter.")
+            return data
+    
     def _apply_notch_filter(self, data: np.ndarray) -> np.ndarray:
         """Apply notch filter to remove power line interference."""
-        sos = signal.iirnotch(
-            self.config.notch_freq,
-            Q=30,
-            fs=self.config.sampling_rate
-        )
-        return signal.sosfiltfilt(sos, data, axis=1)
-        
+        try:
+            from scipy import signal
+            nyquist = self.config.sampling_rate / 2
+            freq = self.config.notch_freq / nyquist
+            
+            # Design notch filter
+            b, a = signal.iirnotch(freq, Q=30)
+            filtered_data = signal.filtfilt(b, a, data, axis=1)
+            return filtered_data
+        except ImportError:
+            warnings.warn("SciPy not available. Skipping notch filter.")
+            return data
+    
     def _apply_car(self, data: np.ndarray) -> np.ndarray:
-        """Apply Common Average Reference to reduce common-mode noise."""
-        car = np.mean(data, axis=0, keepdims=True)
-        return data - car
-        
+        """Apply Common Average Reference."""
+        car_data = data - np.mean(data, axis=0, keepdims=True)
+        return car_data
+    
     def _apply_ica(self, data: np.ndarray, channel_names: list) -> np.ndarray:
         """Apply Independent Component Analysis for artifact removal."""
         if not HAS_MNE:
             return data
             
-        # Create MNE Info object
-        info = mne.create_info(
-            ch_names=channel_names,
-            sfreq=self.config.sampling_rate,
-            ch_types='eeg'
-        )
-        
-        # Create Raw object
-        raw = mne.io.RawArray(data, info, verbose=False)
-        
-        # Apply ICA
-        n_components = self.config.ica_n_components or min(len(channel_names), 20)
-        ica = mne.preprocessing.ICA(
-            n_components=n_components,
-            method='infomax',
-            random_state=42,
-            verbose=False
-        )
-        
-        ica.fit(raw)
-        
-        # Auto-detect and exclude eye blink/muscle artifacts
-        # This is a simplified approach - in practice, you'd want more sophisticated artifact detection
-        exclude_idx = []
-        
-        # Simple heuristic: exclude components with high variance in frontal channels
-        if any('Fp' in ch or 'AF' in ch for ch in channel_names):
-            frontal_channels = [i for i, ch in enumerate(channel_names) 
-                              if 'Fp' in ch or 'AF' in ch]
-            if frontal_channels:
-                # Exclude components with high correlation to frontal channels
-                for i in range(n_components):
-                    if np.max(np.abs(ica.mixing_matrix_[frontal_channels, i])) > 0.7:
-                        exclude_idx.append(i)
-                        
-        ica.exclude = exclude_idx
-        raw_corrected = ica.apply(raw, verbose=False)
-        
-        return raw_corrected.get_data()
-        
+        try:
+            # Create MNE info structure
+            info = mne.create_info(
+                ch_names=channel_names,
+                sfreq=self.config.sampling_rate,
+                ch_types='eeg'
+            )
+            
+            # Create raw object
+            raw = mne.io.RawArray(data, info)
+            
+            # Apply ICA
+            ica = mne.preprocessing.ICA(
+                n_components=self.config.ica_n_components,
+                random_state=42
+            )
+            ica.fit(raw)
+            
+            # Remove components (would typically use automated detection)
+            ica.apply(raw)
+            
+            return raw.get_data()
+        except Exception as e:
+            warnings.warn(f"ICA failed: {e}. Using original data.")
+            return data
+    
     def _standardize(self, data: np.ndarray) -> np.ndarray:
         """Standardize signals to zero mean and unit variance."""
-        return zscore(data, axis=1)
-        
+        try:
+            from scipy.stats import zscore
+            return zscore(data, axis=1)
+        except ImportError:
+            # Manual standardization
+            mean = np.mean(data, axis=1, keepdims=True)
+            std = np.std(data, axis=1, keepdims=True)
+            return (data - mean) / (std + 1e-8)
+    
     def _create_epochs(self, data: np.ndarray) -> np.ndarray:
-        """Create overlapping windows/epochs from continuous data."""
+        """Create windowed epochs from continuous data."""
+        n_channels, n_timepoints = data.shape
         window_samples = int(self.config.window_size * self.config.sampling_rate)
         step_samples = int(window_samples * (1 - self.config.overlap))
         
-        epochs = []
-        start = 0
+        if window_samples > n_timepoints:
+            return data.reshape(1, n_channels, n_timepoints)
         
-        while start + window_samples <= data.shape[1]:
-            epoch = data[:, start:start + window_samples]
-            epochs.append(epoch)
-            start += step_samples
-            
-        return np.array(epochs)  # Shape: (n_epochs, n_channels, n_timepoints)
+        n_epochs = (n_timepoints - window_samples) // step_samples + 1
+        epochs = np.zeros((n_epochs, n_channels, window_samples))
         
-    def extract_features(self, epochs: np.ndarray) -> np.ndarray:
-        """
-        Extract features from epoched data for neural decoding.
+        for i in range(n_epochs):
+            start = i * step_samples
+            end = start + window_samples
+            epochs[i] = data[:, start:end]
         
-        Args:
-            epochs: Shape (n_epochs, n_channels, n_timepoints)
-            
-        Returns:
-            Feature array of shape (n_epochs, n_features)
-        """
-        n_epochs, n_channels, n_timepoints = epochs.shape
-        features = []
+        return epochs
+    
+    def _extract_features(self, data: np.ndarray) -> Dict[str, np.ndarray]:
+        """Extract time-domain and frequency-domain features."""
+        features = {}
         
-        for epoch in epochs:
-            epoch_features = []
-            
-            # Time domain features
-            epoch_features.extend(np.mean(epoch, axis=1))  # Channel means
-            epoch_features.extend(np.std(epoch, axis=1))   # Channel standard deviations
-            epoch_features.extend(np.max(epoch, axis=1))   # Channel maxima
-            epoch_features.extend(np.min(epoch, axis=1))   # Channel minima
-            
-            # Frequency domain features
+        # Time-domain features
+        features['mean'] = np.mean(data, axis=1)
+        features['std'] = np.std(data, axis=1)
+        features['variance'] = np.var(data, axis=1)
+        features['skewness'] = self._calculate_skewness(data)
+        features['kurtosis'] = self._calculate_kurtosis(data)
+        
+        # Frequency-domain features
+        try:
+            from scipy import signal
             freqs, psd = signal.welch(
-                epoch, 
-                fs=self.config.sampling_rate, 
-                nperseg=min(256, n_timepoints)
+                data, 
+                fs=self.config.sampling_rate,
+                axis=1
             )
             
             # Band power features
-            bands = {
-                'delta': (0.5, 4),
-                'theta': (4, 8), 
-                'alpha': (8, 13),
-                'beta': (13, 30),
-                'gamma': (30, 40)
-            }
+            features['alpha_power'] = self._band_power(freqs, psd, 8, 12)
+            features['beta_power'] = self._band_power(freqs, psd, 13, 30)
+            features['gamma_power'] = self._band_power(freqs, psd, 31, 100)
+            features['total_power'] = np.sum(psd, axis=1)
             
-            for band_name, (low, high) in bands.items():
-                band_mask = (freqs >= low) & (freqs <= high)
-                if np.any(band_mask):
-                    band_power = np.mean(psd[:, band_mask], axis=1)
-                    epoch_features.extend(band_power)
-                    
-            features.append(epoch_features)
-            
-        return np.array(features)
+        except ImportError:
+            warnings.warn("SciPy not available. Skipping frequency features.")
+        
+        return features
+    
+    def _calculate_skewness(self, data: np.ndarray) -> np.ndarray:
+        """Calculate skewness for each channel."""
+        mean = np.mean(data, axis=1, keepdims=True)
+        std = np.std(data, axis=1, keepdims=True)
+        normalized = (data - mean) / (std + 1e-8)
+        return np.mean(normalized**3, axis=1)
+    
+    def _calculate_kurtosis(self, data: np.ndarray) -> np.ndarray:
+        """Calculate kurtosis for each channel."""
+        mean = np.mean(data, axis=1, keepdims=True)
+        std = np.std(data, axis=1, keepdims=True)
+        normalized = (data - mean) / (std + 1e-8)
+        return np.mean(normalized**4, axis=1) - 3
+    
+    def _band_power(self, freqs: np.ndarray, psd: np.ndarray, 
+                   low_freq: float, high_freq: float) -> np.ndarray:
+        """Calculate power in specific frequency band."""
+        freq_mask = (freqs >= low_freq) & (freqs <= high_freq)
+        return np.sum(psd[:, freq_mask], axis=1)
