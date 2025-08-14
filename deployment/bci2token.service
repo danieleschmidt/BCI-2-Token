@@ -1,0 +1,21 @@
+[Unit]
+Description=BCI-2-Token Service
+After=network.target
+
+[Service]
+Type=forking
+User=bci2token
+Group=bci2token
+WorkingDirectory=/opt/bci2token
+Environment=ENVIRONMENT=production
+Environment=LOG_LEVEL=WARNING
+ExecStart=/opt/bci2token/venv/bin/python -m bci2token.cli serve --host 0.0.0.0 --port 8080
+ExecReload=/bin/kill -s HUP $MAINPID
+KillMode=mixed
+TimeoutStopSec=5
+PrivateTmp=true
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

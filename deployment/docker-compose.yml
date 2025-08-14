@@ -1,0 +1,53 @@
+version: '3.8'
+
+services:
+  bci2token:
+    image: bci2token:1.0.0
+    ports:
+      - "8080:8080"
+    environment:
+      - ENVIRONMENT=production
+      - DEBUG=false
+      - WORKERS=4
+      - LOG_LEVEL=WARNING
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 2048M
+          cpus: '4'
+        reservations:
+          memory: 1024M
+          cpus: '2.0'
+
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:13
+    environment:
+      POSTGRES_DB: bci2token
+      POSTGRES_USER: bci_user
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  redis_data:
+  postgres_data:

@@ -50,6 +50,12 @@ class SecurityConfig:
     # Rate limiting
     max_requests_per_minute: int = 60
     max_decode_operations_per_hour: int = 1000
+    
+    # Advanced security features
+    enable_anomaly_detection: bool = True
+    suspicious_activity_threshold: int = 10
+    auto_block_suspicious_ips: bool = True
+    enable_request_signing: bool = True
 
 
 class AccessController:
