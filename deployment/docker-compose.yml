@@ -10,23 +10,50 @@ services:
       - DEBUG=false
       - WORKERS=4
       - LOG_LEVEL=WARNING
+      # Generation 1 Enhanced Configuration
+      - ENABLE_OPERATIONAL_RESILIENCE=true
+      - ENHANCED_SIGNAL_VALIDATION=true
+      # Generation 2 Security Configuration
+      - ENABLE_SECURITY_FRAMEWORK=true
+      - ENABLE_THREAT_DETECTION=true
+      - ENABLE_INPUT_SANITIZATION=true
+      - ENABLE_ANOMALY_DETECTION=true
+      - SECURITY_LOG_LEVEL=INFO
+      # Generation 3 Performance Configuration
+      - ENABLE_HYPERSCALE_OPTIMIZER=true
+      - ENABLE_ADAPTIVE_LOAD_BALANCER=true
+      - ENABLE_AUTO_SCALING=true
+      - PERFORMANCE_MONITORING=true
+      - CACHE_MAX_SIZE=10000
+      - MAX_CONCURRENT_REQUESTS=1000
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
+      - ./cache:/app/cache
+      - ./security_logs:/app/security_logs
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
-      interval: 30s
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8080/health').raise_for_status()"]
+      interval: 15s
       timeout: 10s
-      retries: 3
+      retries: 5
+      start_period: 30s
     deploy:
+      replicas: 3
+      update_config:
+        parallelism: 1
+        delay: 10s
+        failure_action: rollback
+      rollback_config:
+        parallelism: 1
+        delay: 10s
       resources:
         limits:
-          memory: 2048M
-          cpus: '4'
+          memory: 4096M
+          cpus: '8'
         reservations:
-          memory: 1024M
-          cpus: '2.0'
+          memory: 2048M
+          cpus: '4.0'
 
   redis:
     image: redis:alpine
@@ -47,7 +74,122 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1024M
+          cpus: '2'
+
+  # Generation 2: Enhanced Security Monitoring
+  security_monitor:
+    image: bci2token:1.0.0
+    command: ["python", "-m", "bci2token.security_monitor"]
+    environment:
+      - ENVIRONMENT=production
+      - SECURITY_MONITORING=true
+      - ALERT_WEBHOOK_URL=${SECURITY_ALERT_WEBHOOK}
+    volumes:
+      - ./security_logs:/app/security_logs
+      - ./audit_logs:/app/audit_logs
+    restart: unless-stopped
+    depends_on:
+      - redis
+      - postgres
+
+  # Generation 3: Performance Monitor & Auto-Scaler
+  performance_monitor:
+    image: bci2token:1.0.0
+    command: ["python", "-m", "bci2token.performance_monitor"]
+    environment:
+      - ENVIRONMENT=production
+      - PERFORMANCE_MONITORING=true
+      - AUTO_SCALING_ENABLED=true
+      - SCALING_WEBHOOK_URL=${SCALING_WEBHOOK}
+    volumes:
+      - ./performance_logs:/app/performance_logs
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped
+    depends_on:
+      - redis
+      - postgres
+
+  # Enhanced Load Balancer
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+      - ./ssl_certs:/etc/nginx/ssl
+    restart: unless-stopped
+    depends_on:
+      - bci2token
+
+  # Prometheus for Metrics Collection
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+    restart: unless-stopped
+
+  # Grafana for Performance Dashboards
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD}
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./grafana/datasources:/etc/grafana/provisioning/datasources
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+
+  # ELK Stack for Log Analysis
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.15.0
+    environment:
+      - discovery.type=single-node
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
+    restart: unless-stopped
+
+  logstash:
+    image: docker.elastic.co/logstash/logstash:7.15.0
+    volumes:
+      - ./logstash/pipeline:/usr/share/logstash/pipeline
+      - ./logs:/usr/share/logstash/logs
+    depends_on:
+      - elasticsearch
+    restart: unless-stopped
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:7.15.0
+    ports:
+      - "5601:5601"
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    depends_on:
+      - elasticsearch
+    restart: unless-stopped
 
 volumes:
   redis_data:
   postgres_data:
+  prometheus_data:
+  grafana_data:
+  elasticsearch_data:

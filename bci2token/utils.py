@@ -45,6 +45,56 @@ class PrivacyError(BCIError):
     pass
 
 
+def enhanced_signal_validation(signal: Any, 
+                             expected_channels: int,
+                             min_timepoints: int = 1,
+                             max_amplitude: float = 1000.0) -> Dict[str, Any]:
+    """Enhanced signal validation with detailed diagnostics."""
+    validation_result = {
+        'valid': False,
+        'errors': [],
+        'warnings': [],
+        'diagnostics': {}
+    }
+    
+    if not HAS_NUMPY:
+        validation_result['errors'].append("NumPy not available for signal validation")
+        return validation_result
+    
+    try:
+        signal_array = np.asarray(signal)
+        validation_result['diagnostics']['shape'] = signal_array.shape
+        validation_result['diagnostics']['dtype'] = str(signal_array.dtype)
+        
+        # Shape validation
+        if signal_array.ndim != 2:
+            validation_result['errors'].append(f"Signal must be 2D, got {signal_array.ndim}D")
+        elif signal_array.shape[0] != expected_channels:
+            validation_result['errors'].append(f"Expected {expected_channels} channels, got {signal_array.shape[0]}")
+        elif signal_array.shape[1] < min_timepoints:
+            validation_result['errors'].append(f"Need at least {min_timepoints} timepoints, got {signal_array.shape[1]}")
+        
+        # Amplitude validation
+        if signal_array.size > 0:
+            max_val = np.max(np.abs(signal_array))
+            validation_result['diagnostics']['max_amplitude'] = float(max_val)
+            if max_val > max_amplitude:
+                validation_result['warnings'].append(f"Signal amplitude {max_val:.2f} exceeds recommended max {max_amplitude}")
+            
+            # Check for inf/nan
+            if np.any(np.isinf(signal_array)):
+                validation_result['errors'].append("Signal contains infinite values")
+            if np.any(np.isnan(signal_array)):
+                validation_result['errors'].append("Signal contains NaN values")
+                
+        validation_result['valid'] = len(validation_result['errors']) == 0
+        return validation_result
+        
+    except Exception as e:
+        validation_result['errors'].append(f"Validation error: {str(e)}")
+        return validation_result
+
+
 def validate_signal_shape(signal: Any, 
                          expected_channels: int,
                          min_timepoints: int = 1) -> None:
@@ -343,6 +393,93 @@ def load_json_config(config_path: Union[str, Path]) -> Dict[str, Any]:
         
     except json.JSONDecodeError as e:
         raise ValueError(f"Invalid JSON in configuration file: {e}")
+
+
+class OperationalResilience:
+    """Enhanced operational resilience framework for BCI-2-Token Generation 1."""
+    
+    def __init__(self):
+        self.error_counts = {}
+        self.recovery_strategies = {}
+        self.health_checks = []
+        
+    def register_recovery_strategy(self, error_type: type, strategy: Callable):
+        """Register a recovery strategy for specific error types."""
+        self.recovery_strategies[error_type] = strategy
+        
+    def add_health_check(self, name: str, check_func: Callable):
+        """Add a system health check."""
+        self.health_checks.append((name, check_func))
+        
+    def execute_with_resilience(self, func: Callable, *args, **kwargs):
+        """Execute function with enhanced error handling and recovery."""
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            error_type = type(e)
+            self.error_counts[error_type] = self.error_counts.get(error_type, 0) + 1
+            
+            # Try recovery strategy
+            if error_type in self.recovery_strategies:
+                try:
+                    recovery_strategy = self.recovery_strategies[error_type]
+                    return recovery_strategy(func, e, *args, **kwargs)
+                except Exception as recovery_error:
+                    raise BCIError(f"Function failed and recovery failed: {e}, Recovery error: {recovery_error}")
+            
+            # No recovery strategy available
+            raise BCIError(f"Function failed with no recovery strategy: {e}")
+    
+    def get_system_health(self) -> Dict[str, Any]:
+        """Run all health checks and return system health status."""
+        health_status = {
+            'overall_health': 'healthy',
+            'checks': {},
+            'error_summary': dict(self.error_counts)
+        }
+        
+        failed_checks = 0
+        for name, check_func in self.health_checks:
+            try:
+                result = check_func()
+                health_status['checks'][name] = {'status': 'pass', 'result': result}
+            except Exception as e:
+                health_status['checks'][name] = {'status': 'fail', 'error': str(e)}
+                failed_checks += 1
+        
+        if failed_checks > 0:
+            health_status['overall_health'] = 'degraded' if failed_checks < len(self.health_checks) / 2 else 'critical'
+            
+        return health_status
+
+
+def create_enhanced_signal_processor(max_retries: int = 3) -> Callable:
+    """Create enhanced signal processor with fault tolerance."""
+    
+    def enhanced_processor(signal_data, processing_func, **kwargs):
+        """Process signal data with enhanced error handling."""
+        resilience = OperationalResilience()
+        
+        # Register recovery strategies
+        def signal_recovery(func, error, signal_data, **proc_kwargs):
+            """Recovery strategy for signal processing errors."""
+            if HAS_NUMPY:
+                # Try signal cleanup
+                cleaned_signal = np.nan_to_num(signal_data, nan=0.0, posinf=0.0, neginf=0.0)
+                return func(cleaned_signal, **proc_kwargs)
+            raise error
+            
+        resilience.register_recovery_strategy(SignalProcessingError, signal_recovery)
+        resilience.register_recovery_strategy(ValueError, signal_recovery)
+        
+        # Add health checks
+        resilience.add_health_check('signal_shape', lambda: signal_data.shape if HAS_NUMPY else 'numpy_unavailable')
+        resilience.add_health_check('memory_usage', lambda: sys.getsizeof(signal_data))
+        
+        # Execute with resilience
+        return resilience.execute_with_resilience(processing_func, signal_data, **kwargs)
+    
+    return enhanced_processor
 
 
 def save_json_config(config: Dict[str, Any], 

@@ -1,0 +1,46 @@
+{
+  "overall_status": "pass",
+  "total_tests": 5,
+  "status_counts": {
+    "pass": 5
+  },
+  "total_duration": 0.08763408660888672,
+  "dependencies": {
+    "numpy": true,
+    "torch": false,
+    "transformers": false,
+    "scipy": true
+  },
+  "results": [
+    {
+      "name": "Generation 1: Basic Functionality",
+      "status": "pass",
+      "duration": 0.01747441291809082,
+      "message": "Generation 1 tests: 2/2 passed"
+    },
+    {
+      "name": "Generation 2: Security & Robustness",
+      "status": "pass",
+      "duration": 0.020523786544799805,
+      "message": "Generation 2 tests: 2/2 passed"
+    },
+    {
+      "name": "Generation 3: Performance & Scaling",
+      "status": "pass",
+      "duration": 0.0266721248626709,
+      "message": "Generation 3 tests: 2/2 passed"
+    },
+    {
+      "name": "Core Modules Integration",
+      "status": "pass",
+      "duration": 0.0045032501220703125,
+      "message": "Module integration: 6/6 modules imported successfully"
+    },
+    {
+      "name": "Configuration Validation",
+      "status": "pass",
+      "duration": 0.0008327960968017578,
+      "message": "Configuration validation: 3/3 configs valid"
+    }
+  ]
+}

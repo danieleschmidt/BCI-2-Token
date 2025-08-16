@@ -311,3 +311,241 @@ def reset_all_circuit_breakers():
             breaker.state = CircuitBreakerState.CLOSED
             breaker.failure_count = 0
             breaker.success_count = 0
+
+
+class EnhancedErrorRecovery:
+    """Generation 2 Enhanced Error Recovery Framework with adaptive capabilities."""
+    
+    def __init__(self):
+        self.recovery_strategies = {}
+        self.error_patterns = {}
+        self.recovery_success_rates = {}
+        self.adaptive_thresholds = {}
+        self.lock = threading.Lock()
+        
+    def register_recovery_strategy(self, error_type: type, strategy: Callable, 
+                                 success_threshold: float = 0.7):
+        """Register adaptive recovery strategy for specific error types."""
+        with self.lock:
+            self.recovery_strategies[error_type] = {
+                'strategy': strategy,
+                'success_threshold': success_threshold,
+                'attempts': 0,
+                'successes': 0
+            }
+            
+    def execute_with_enhanced_recovery(self, func: Callable, *args, **kwargs) -> Any:
+        """Execute function with enhanced error recovery and pattern analysis."""
+        attempt = 0
+        max_attempts = 3
+        
+        while attempt < max_attempts:
+            try:
+                start_time = time.time()
+                result = func(*args, **kwargs)
+                
+                # Record successful execution time for pattern analysis
+                execution_time = time.time() - start_time
+                self._record_success_pattern(func.__name__, execution_time, attempt)
+                
+                return result
+                
+            except Exception as e:
+                attempt += 1
+                error_type = type(e)
+                
+                # Record error pattern
+                self._record_error_pattern(func.__name__, error_type, attempt)
+                
+                # Try recovery strategy if available
+                if error_type in self.recovery_strategies and attempt < max_attempts:
+                    recovery_info = self.recovery_strategies[error_type]
+                    
+                    try:
+                        # Adaptive recovery based on historical success rates
+                        if self._should_attempt_recovery(error_type):
+                            recovered_result = recovery_info['strategy'](func, e, *args, **kwargs)
+                            
+                            # Update recovery success rate
+                            self._update_recovery_success(error_type, True)
+                            
+                            return recovered_result
+                            
+                    except Exception as recovery_error:
+                        self._update_recovery_success(error_type, False)
+                        # Continue to next attempt or final failure
+                        if attempt == max_attempts:
+                            raise RecoveryError(f"Function failed and recovery failed: {e}, Recovery error: {recovery_error}")
+                
+                # Apply exponential backoff for retries
+                if attempt < max_attempts:
+                    backoff_time = (2 ** attempt) + random.uniform(0, 1)
+                    time.sleep(min(backoff_time, 10))  # Cap at 10 seconds
+                    
+        # All attempts failed
+        raise RecoveryError(f"Function failed after {max_attempts} attempts: {e}")
+        
+    def _should_attempt_recovery(self, error_type: type) -> bool:
+        """Determine if recovery should be attempted based on historical success."""
+        if error_type not in self.recovery_strategies:
+            return False
+            
+        recovery_info = self.recovery_strategies[error_type]
+        attempts = recovery_info['attempts']
+        successes = recovery_info['successes']
+        
+        if attempts < 5:  # Always try recovery for first few attempts
+            return True
+            
+        success_rate = successes / attempts if attempts > 0 else 0
+        return success_rate >= recovery_info['success_threshold']
+        
+    def _update_recovery_success(self, error_type: type, success: bool):
+        """Update recovery success statistics."""
+        with self.lock:
+            if error_type in self.recovery_strategies:
+                recovery_info = self.recovery_strategies[error_type]
+                recovery_info['attempts'] += 1
+                if success:
+                    recovery_info['successes'] += 1
+                    
+    def _record_error_pattern(self, func_name: str, error_type: type, attempt: int):
+        """Record error patterns for analysis."""
+        with self.lock:
+            if func_name not in self.error_patterns:
+                self.error_patterns[func_name] = {}
+                
+            error_key = error_type.__name__
+            if error_key not in self.error_patterns[func_name]:
+                self.error_patterns[func_name][error_key] = []
+                
+            self.error_patterns[func_name][error_key].append({
+                'timestamp': time.time(),
+                'attempt': attempt
+            })
+            
+            # Keep only recent patterns (last 1000 entries)
+            if len(self.error_patterns[func_name][error_key]) > 1000:
+                self.error_patterns[func_name][error_key] = \
+                    self.error_patterns[func_name][error_key][-1000:]
+                    
+    def _record_success_pattern(self, func_name: str, execution_time: float, retry_count: int):
+        """Record successful execution patterns."""
+        # This could be used for performance optimization in Generation 3
+        pass
+        
+    def get_error_analysis(self) -> Dict[str, Any]:
+        """Get comprehensive error analysis and recovery statistics."""
+        with self.lock:
+            analysis = {
+                'recovery_strategies': {},
+                'error_patterns': {},
+                'recommendations': []
+            }
+            
+            # Analyze recovery strategy effectiveness
+            for error_type, info in self.recovery_strategies.items():
+                attempts = info['attempts']
+                successes = info['successes']
+                success_rate = successes / attempts if attempts > 0 else 0
+                
+                analysis['recovery_strategies'][error_type.__name__] = {
+                    'attempts': attempts,
+                    'successes': successes,
+                    'success_rate': success_rate,
+                    'threshold': info['success_threshold'],
+                    'effective': success_rate >= info['success_threshold']
+                }
+                
+                # Generate recommendations
+                if attempts > 10 and success_rate < 0.3:
+                    analysis['recommendations'].append(
+                        f"Consider revising recovery strategy for {error_type.__name__} (low success rate: {success_rate:.2f})"
+                    )
+                    
+            # Analyze error patterns
+            current_time = time.time()
+            for func_name, errors in self.error_patterns.items():
+                recent_errors = 0
+                error_types = []
+                
+                for error_type, occurrences in errors.items():
+                    # Count errors in last hour
+                    recent_count = sum(1 for occurrence in occurrences 
+                                     if current_time - occurrence['timestamp'] < 3600)
+                    recent_errors += recent_count
+                    
+                    if recent_count > 0:
+                        error_types.append(error_type)
+                        
+                if recent_errors > 0:
+                    analysis['error_patterns'][func_name] = {
+                        'recent_errors': recent_errors,
+                        'error_types': error_types
+                    }
+                    
+                    if recent_errors > 10:
+                        analysis['recommendations'].append(
+                            f"High error rate for {func_name}: {recent_errors} errors in last hour"
+                        )
+                        
+            return analysis
+            
+    def optimize_recovery_strategies(self):
+        """Optimize recovery strategies based on historical performance."""
+        with self.lock:
+            for error_type, info in self.recovery_strategies.items():
+                attempts = info['attempts']
+                successes = info['successes']
+                
+                if attempts > 20:  # Enough data for optimization
+                    success_rate = successes / attempts
+                    
+                    # Adjust threshold based on actual performance
+                    if success_rate > 0.8:
+                        # Very successful, can be more aggressive
+                        info['success_threshold'] = max(0.6, info['success_threshold'] - 0.1)
+                    elif success_rate < 0.3:
+                        # Poor performance, be more conservative
+                        info['success_threshold'] = min(0.9, info['success_threshold'] + 0.1)
+
+
+class AdaptiveRetryConfig:
+    """Adaptive retry configuration that learns from patterns."""
+    
+    def __init__(self, base_delay: float = 1.0, max_delay: float = 60.0):
+        self.base_delay = base_delay
+        self.max_delay = max_delay
+        self.success_delays = []
+        self.failure_delays = []
+        
+    def get_adaptive_delay(self, attempt: int) -> float:
+        """Get adaptive delay based on historical patterns."""
+        # Start with exponential backoff
+        base_delay = min(self.base_delay * (2 ** attempt), self.max_delay)
+        
+        # Adjust based on historical success patterns
+        if len(self.success_delays) > 5:
+            avg_success_delay = sum(self.success_delays[-10:]) / len(self.success_delays[-10:])
+            # If successful operations typically happen after longer delays, adjust accordingly
+            if avg_success_delay > base_delay:
+                base_delay = min(avg_success_delay * 0.8, self.max_delay)
+                
+        return base_delay
+        
+    def record_outcome(self, delay_used: float, success: bool):
+        """Record the outcome of a retry attempt."""
+        if success:
+            self.success_delays.append(delay_used)
+            # Keep only recent history
+            if len(self.success_delays) > 100:
+                self.success_delays = self.success_delays[-100:]
+        else:
+            self.failure_delays.append(delay_used)
+            if len(self.failure_delays) > 100:
+                self.failure_delays = self.failure_delays[-100:]
+
+
+class RecoveryError(BCIError):
+    """Error indicating recovery attempts have failed."""
+    pass

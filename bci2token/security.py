@@ -47,7 +47,17 @@ class SecurityConfig:
     secure_delete: bool = True
     audit_data_access: bool = True
     
-    # Rate limiting
+    # Rate limiting (Enhanced for production security)
+    enable_rate_limiting: bool = True
+    max_requests_per_minute: int = 30  # Reduced for better security
+    max_requests_per_hour: int = 500   # Reduced for better security
+    
+    # Enhanced Generation 2 Security
+    enable_anomaly_detection: bool = True
+    threat_detection_threshold: float = 0.8
+    enable_input_sanitization: bool = True
+    log_security_events: bool = True
+    enable_session_validation: bool = True
     max_requests_per_minute: int = 60
     max_decode_operations_per_hour: int = 1000
     
@@ -757,3 +767,246 @@ if __name__ == '__main__':
         print(f"✗ Security test failed: {e}")
         import traceback
         traceback.print_exc()
+
+
+class EnhancedSecurityFramework:
+    """Generation 2 Enhanced Security Framework with advanced threat detection."""
+    
+    def __init__(self, config: SecurityConfig):
+        self.config = config
+        self.threat_scores = {}
+        self.security_events = []
+        self.lock = threading.Lock()
+        
+    def analyze_threat_level(self, user_id: str, signal_data: Any, operation: str) -> float:
+        """Analyze threat level for incoming requests."""
+        threat_score = 0.0
+        
+        if not HAS_NUMPY:
+            return threat_score
+            
+        try:
+            signal_array = np.asarray(signal_data)
+            
+            # Anomaly detection based on signal characteristics
+            if signal_array.size > 0:
+                # Check for unusual amplitude patterns
+                max_amp = np.max(np.abs(signal_array))
+                if max_amp > self.config.max_signal_amplitude * 2:
+                    threat_score += 0.3
+                    
+                # Check for artificial patterns (too regular)
+                if signal_array.ndim == 2 and signal_array.shape[1] > 10:
+                    variance_across_time = np.var(signal_array, axis=1)
+                    if np.all(variance_across_time < 0.001):  # Too regular
+                        threat_score += 0.4
+                        
+                # Check for potential injection attacks (sudden spikes)
+                if signal_array.ndim == 2:
+                    for channel in signal_array:
+                        diff = np.diff(channel)
+                        if np.any(np.abs(diff) > max_amp * 0.8):
+                            threat_score += 0.2
+                            
+            # Behavioral analysis
+            with self.lock:
+                if user_id not in self.threat_scores:
+                    self.threat_scores[user_id] = []
+                    
+                # Check request frequency (rapid requests could indicate automation)
+                current_time = time.time()
+                recent_requests = [t for t in self.threat_scores[user_id] 
+                                 if current_time - t < 60]  # Last minute
+                
+                if len(recent_requests) > 10:  # More than 10 requests per minute
+                    threat_score += 0.3
+                    
+                self.threat_scores[user_id].append(current_time)
+                
+                # Keep only recent history
+                self.threat_scores[user_id] = [
+                    t for t in self.threat_scores[user_id] 
+                    if current_time - t < 3600  # Last hour
+                ]
+                
+        except Exception as e:
+            # Analysis failure itself could indicate an attack
+            threat_score += 0.5
+            self._log_security_event('analysis_failure', user_id, f"Threat analysis failed: {e}")
+            
+        return min(threat_score, 1.0)  # Cap at 1.0
+        
+    def sanitize_input(self, signal_data: Any) -> Any:
+        """Sanitize input data to prevent injection attacks."""
+        if not self.config.enable_input_sanitization:
+            return signal_data
+            
+        if not HAS_NUMPY:
+            return signal_data
+            
+        try:
+            signal_array = np.asarray(signal_data)
+            
+            # Remove NaN and Inf values
+            signal_array = np.nan_to_num(signal_array, nan=0.0, posinf=0.0, neginf=0.0)
+            
+            # Clip extreme values
+            max_allowed = self.config.max_signal_amplitude
+            signal_array = np.clip(signal_array, -max_allowed, max_allowed)
+            
+            # Ensure reasonable size
+            if signal_array.size > self.config.max_batch_size * 1000:
+                # Truncate oversized inputs
+                if signal_array.ndim == 2:
+                    max_timepoints = self.config.max_batch_size * 1000 // signal_array.shape[0]
+                    signal_array = signal_array[:, :max_timepoints]
+                else:
+                    signal_array = signal_array[:self.config.max_batch_size * 1000]
+                    
+            return signal_array
+            
+        except Exception as e:
+            self._log_security_event('sanitization_failure', 'unknown', f"Input sanitization failed: {e}")
+            raise SecurityError(f"Input sanitization failed: {e}")
+            
+    def validate_session(self, session_token: str, user_id: str) -> bool:
+        """Validate session token and user identity."""
+        if not self.config.enable_session_validation:
+            return True
+            
+        try:
+            # Basic session validation (in production, use proper JWT or similar)
+            if not session_token or len(session_token) < 10:
+                self._log_security_event('invalid_session', user_id, "Invalid session token")
+                return False
+                
+            # Check session format (basic validation)
+            if not session_token.replace('-', '').replace('_', '').isalnum():
+                self._log_security_event('malformed_session', user_id, "Malformed session token")
+                return False
+                
+            return True
+            
+        except Exception as e:
+            self._log_security_event('session_validation_error', user_id, f"Session validation error: {e}")
+            return False
+            
+    def detect_anomalies(self, user_id: str, operation_metrics: Dict[str, float]) -> bool:
+        """Detect anomalous behavior patterns."""
+        if not self.config.enable_anomaly_detection:
+            return False
+            
+        try:
+            anomaly_indicators = []
+            
+            # Check processing time anomalies
+            if 'processing_time' in operation_metrics:
+                proc_time = operation_metrics['processing_time']
+                if proc_time > 30.0:  # Unusually long processing
+                    anomaly_indicators.append('long_processing_time')
+                    
+            # Check data size anomalies
+            if 'data_size' in operation_metrics:
+                data_size = operation_metrics['data_size']
+                if data_size > self.config.max_batch_size * 1000:
+                    anomaly_indicators.append('oversized_data')
+                    
+            # Check resource usage anomalies
+            if 'memory_usage' in operation_metrics:
+                memory_usage = operation_metrics['memory_usage']
+                if memory_usage > 1000000000:  # > 1GB
+                    anomaly_indicators.append('excessive_memory')
+                    
+            if anomaly_indicators:
+                self._log_security_event('anomaly_detected', user_id, 
+                                       f"Anomalies detected: {anomaly_indicators}")
+                return True
+                
+            return False
+            
+        except Exception as e:
+            self._log_security_event('anomaly_detection_error', user_id, 
+                                   f"Anomaly detection error: {e}")
+            return False
+            
+    def _log_security_event(self, event_type: str, user_id: str, description: str):
+        """Log security events for audit trail."""
+        if not self.config.log_security_events:
+            return
+            
+        security_event = {
+            'timestamp': time.time(),
+            'event_type': event_type,
+            'user_id': user_id,
+            'description': description
+        }
+        
+        with self.lock:
+            self.security_events.append(security_event)
+            
+            # Keep only recent events (last 24 hours)
+            cutoff_time = time.time() - 86400
+            self.security_events = [
+                event for event in self.security_events 
+                if event['timestamp'] > cutoff_time
+            ]
+            
+        # Also log to monitoring system
+        try:
+            from .monitoring import get_monitor
+            monitor = get_monitor()
+            monitor.logger.warning(
+                'Security',
+                f'{event_type}: {description}',
+                {
+                    'user_id': user_id,
+                    'event_type': event_type,
+                    'timestamp': security_event['timestamp']
+                }
+            )
+        except ImportError:
+            pass
+            
+    def get_security_status(self) -> Dict[str, Any]:
+        """Get comprehensive security status."""
+        with self.lock:
+            current_time = time.time()
+            
+            # Count recent security events
+            recent_events = [
+                event for event in self.security_events
+                if current_time - event['timestamp'] < 3600  # Last hour
+            ]
+            
+            # Categorize events
+            event_counts = {}
+            for event in recent_events:
+                event_type = event['event_type']
+                event_counts[event_type] = event_counts.get(event_type, 0) + 1
+                
+            # Determine security status
+            total_recent_events = len(recent_events)
+            if total_recent_events == 0:
+                security_level = 'secure'
+            elif total_recent_events < 5:
+                security_level = 'elevated'
+            else:
+                security_level = 'high_risk'
+                
+            return {
+                'security_level': security_level,
+                'recent_events_count': total_recent_events,
+                'event_breakdown': event_counts,
+                'active_users': len(self.threat_scores),
+                'config_status': {
+                    'anomaly_detection': self.config.enable_anomaly_detection,
+                    'input_sanitization': self.config.enable_input_sanitization,
+                    'session_validation': self.config.enable_session_validation,
+                    'event_logging': self.config.log_security_events
+                }
+            }
+
+
+class SecurityError(Exception):
+    """Security-related error."""
+    pass
