@@ -416,7 +416,7 @@ class QualityGateRunner:
         # Test circuit breaker
         try:
             config = CircuitBreakerConfig(failure_threshold=2)
-            breaker = CircuitBreaker(config, "test")
+            breaker = CircuitBreaker("test", config)
             
             def failing_function():
                 raise Exception("Test failure")

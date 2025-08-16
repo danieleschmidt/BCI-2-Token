@@ -953,5 +953,401 @@ def demo_performance_optimization():
     print("\n=== Performance Optimization Demo Complete ===")
 
 
+class HyperscaleOptimizer:
+    """Generation 3 Hyperscale Performance Optimizer with advanced ML-driven optimization."""
+    
+    def __init__(self, config: PerformanceConfig):
+        self.config = config
+        self.performance_history = deque(maxlen=10000)
+        self.optimization_patterns = {}
+        self.adaptive_thresholds = {}
+        self.ml_predictions = {}
+        self.lock = threading.Lock()
+        
+    def analyze_performance_patterns(self) -> Dict[str, Any]:
+        """Analyze performance patterns using machine learning techniques."""
+        if len(self.performance_history) < 100:
+            return {'status': 'insufficient_data', 'samples': len(self.performance_history)}
+            
+        with self.lock:
+            # Convert to numpy arrays for analysis
+            timestamps = [entry['timestamp'] for entry in self.performance_history]
+            cpu_usage = [entry['cpu'] for entry in self.performance_history]
+            memory_usage = [entry['memory'] for entry in self.performance_history]
+            request_rates = [entry['request_rate'] for entry in self.performance_history]
+            response_times = [entry['response_time'] for entry in self.performance_history]
+            
+            # Time-based analysis
+            current_time = time.time()
+            time_deltas = [(current_time - ts) / 3600 for ts in timestamps]  # Hours ago
+            
+            # Detect patterns
+            patterns = {
+                'peak_hours': self._detect_peak_hours(timestamps, request_rates),
+                'cpu_memory_correlation': np.corrcoef(cpu_usage, memory_usage)[0, 1],
+                'load_response_correlation': np.corrcoef(request_rates, response_times)[0, 1],
+                'daily_patterns': self._detect_daily_patterns(timestamps, cpu_usage),
+                'anomalies': self._detect_performance_anomalies(cpu_usage, memory_usage, response_times)
+            }
+            
+            # Predictive modeling
+            predictions = self._generate_predictions(timestamps, cpu_usage, memory_usage, request_rates)
+            
+            return {
+                'status': 'analysis_complete',
+                'samples_analyzed': len(self.performance_history),
+                'patterns': patterns,
+                'predictions': predictions,
+                'recommendations': self._generate_optimization_recommendations(patterns, predictions)
+            }
+            
+    def _detect_peak_hours(self, timestamps: List[float], request_rates: List[float]) -> Dict[str, Any]:
+        """Detect peak usage hours for proactive scaling."""
+        import datetime
+        
+        hourly_rates = defaultdict(list)
+        for ts, rate in zip(timestamps, request_rates):
+            hour = datetime.datetime.fromtimestamp(ts).hour
+            hourly_rates[hour].append(rate)
+            
+        # Calculate average rates per hour
+        avg_hourly_rates = {hour: np.mean(rates) for hour, rates in hourly_rates.items()}
+        
+        # Find peak hours (top 25%)
+        sorted_hours = sorted(avg_hourly_rates.items(), key=lambda x: x[1], reverse=True)
+        peak_threshold = np.percentile(list(avg_hourly_rates.values()), 75)
+        peak_hours = [hour for hour, rate in sorted_hours if rate >= peak_threshold]
+        
+        return {
+            'peak_hours': peak_hours,
+            'hourly_averages': avg_hourly_rates,
+            'peak_threshold': peak_threshold
+        }
+        
+    def _detect_daily_patterns(self, timestamps: List[float], metrics: List[float]) -> Dict[str, Any]:
+        """Detect daily usage patterns."""
+        import datetime
+        
+        daily_data = defaultdict(list)
+        for ts, metric in zip(timestamps, metrics):
+            day_of_week = datetime.datetime.fromtimestamp(ts).weekday()  # 0=Monday, 6=Sunday
+            daily_data[day_of_week].append(metric)
+            
+        daily_averages = {day: np.mean(values) for day, values in daily_data.items()}
+        
+        # Identify weekday vs weekend patterns
+        weekday_avg = np.mean([avg for day, avg in daily_averages.items() if day < 5])
+        weekend_avg = np.mean([avg for day, avg in daily_averages.items() if day >= 5])
+        
+        return {
+            'daily_averages': daily_averages,
+            'weekday_avg': weekday_avg,
+            'weekend_avg': weekend_avg,
+            'weekend_weekday_ratio': weekend_avg / weekday_avg if weekday_avg > 0 else 1.0
+        }
+        
+    def _detect_performance_anomalies(self, cpu_usage: List[float], 
+                                    memory_usage: List[float], 
+                                    response_times: List[float]) -> Dict[str, Any]:
+        """Detect performance anomalies using statistical methods."""
+        anomalies = {
+            'cpu_anomalies': [],
+            'memory_anomalies': [],
+            'response_time_anomalies': []
+        }
+        
+        # Use z-score for anomaly detection (values > 3 standard deviations)
+        for name, data in [('cpu', cpu_usage), ('memory', memory_usage), ('response_time', response_times)]:
+            if len(data) < 10:
+                continue
+                
+            mean_val = np.mean(data)
+            std_val = np.std(data)
+            
+            if std_val > 0:
+                z_scores = [(val - mean_val) / std_val for val in data]
+                anomaly_indices = [i for i, z in enumerate(z_scores) if abs(z) > 3]
+                
+                anomalies[f'{name}_anomalies'] = [
+                    {'index': i, 'value': data[i], 'z_score': z_scores[i]}
+                    for i in anomaly_indices
+                ]
+                
+        return anomalies
+        
+    def _generate_predictions(self, timestamps: List[float], cpu_usage: List[float],
+                            memory_usage: List[float], request_rates: List[float]) -> Dict[str, Any]:
+        """Generate performance predictions using simple time series analysis."""
+        predictions = {}
+        
+        # Simple linear trend prediction for next hour
+        current_time = time.time()
+        future_time = current_time + 3600  # 1 hour ahead
+        
+        for name, data in [('cpu', cpu_usage), ('memory', memory_usage), ('request_rate', request_rates)]:
+            if len(data) >= 10:
+                # Use last 10 points for trend
+                recent_data = data[-10:]
+                x_values = list(range(len(recent_data)))
+                
+                # Linear regression
+                coeffs = np.polyfit(x_values, recent_data, 1)
+                trend_slope = coeffs[0]
+                current_value = recent_data[-1]
+                
+                # Predict next 6 values (next hour in 10-minute intervals)
+                future_predictions = []
+                for i in range(1, 7):
+                    predicted_value = current_value + (trend_slope * i)
+                    future_predictions.append(max(0, predicted_value))  # Ensure non-negative
+                    
+                predictions[name] = {
+                    'current': current_value,
+                    'trend_slope': trend_slope,
+                    'predictions_1h': future_predictions,
+                    'avg_predicted': np.mean(future_predictions)
+                }
+                
+        return predictions
+        
+    def _generate_optimization_recommendations(self, patterns: Dict[str, Any], 
+                                             predictions: Dict[str, Any]) -> List[str]:
+        """Generate optimization recommendations based on analysis."""
+        recommendations = []
+        
+        # Peak hours recommendations
+        if 'peak_hours' in patterns:
+            peak_hours = patterns['peak_hours']['peak_hours']
+            if peak_hours:
+                recommendations.append(
+                    f"Consider proactive scaling during peak hours: {peak_hours}"
+                )
+                
+        # CPU/Memory correlation
+        if 'cpu_memory_correlation' in patterns:
+            correlation = patterns['cpu_memory_correlation']
+            if correlation > 0.8:
+                recommendations.append(
+                    "High CPU-memory correlation detected. Consider memory optimization."
+                )
+            elif correlation < 0.2:
+                recommendations.append(
+                    "Low CPU-memory correlation. May have separate bottlenecks."
+                )
+                
+        # Response time predictions
+        if 'response_time' in predictions:
+            predicted_avg = predictions['response_time']['avg_predicted']
+            current = predictions['response_time']['current']
+            
+            if predicted_avg > current * 1.5:
+                recommendations.append(
+                    "Response times predicted to increase significantly. Consider scaling up."
+                )
+            elif predicted_avg < current * 0.7:
+                recommendations.append(
+                    "Response times predicted to improve. Consider scaling down to save resources."
+                )
+                
+        # Anomaly-based recommendations
+        if 'anomalies' in patterns:
+            cpu_anomalies = len(patterns['anomalies']['cpu_anomalies'])
+            memory_anomalies = len(patterns['anomalies']['memory_anomalies'])
+            
+            if cpu_anomalies > 5:
+                recommendations.append(
+                    f"High number of CPU anomalies ({cpu_anomalies}). Investigate CPU spikes."
+                )
+            if memory_anomalies > 5:
+                recommendations.append(
+                    f"High number of memory anomalies ({memory_anomalies}). Check for memory leaks."
+                )
+                
+        return recommendations
+        
+    def record_performance_sample(self, cpu: float, memory: float, 
+                                request_rate: float, response_time: float):
+        """Record a performance sample for analysis."""
+        with self.lock:
+            self.performance_history.append({
+                'timestamp': time.time(),
+                'cpu': cpu,
+                'memory': memory,
+                'request_rate': request_rate,
+                'response_time': response_time
+            })
+            
+    def optimize_based_on_predictions(self) -> Dict[str, Any]:
+        """Optimize system configuration based on ML predictions."""
+        analysis = self.analyze_performance_patterns()
+        
+        if analysis['status'] != 'analysis_complete':
+            return analysis
+            
+        optimizations = {
+            'cache_adjustments': {},
+            'scaling_adjustments': {},
+            'threshold_adjustments': {}
+        }
+        
+        predictions = analysis['predictions']
+        
+        # Optimize cache based on memory predictions
+        if 'memory' in predictions:
+            predicted_memory = predictions['memory']['avg_predicted']
+            current_memory = predictions['memory']['current']
+            
+            if predicted_memory > 0.9:  # High memory usage predicted
+                # Reduce cache size
+                new_cache_size = max(100, int(self.config.cache_max_size * 0.8))
+                optimizations['cache_adjustments']['max_size'] = new_cache_size
+                
+        # Optimize scaling thresholds based on patterns
+        patterns = analysis['patterns']
+        if 'peak_hours' in patterns:
+            current_hour = time.localtime().tm_hour
+            if current_hour in patterns['peak_hours']['peak_hours']:
+                # Lower scale-up threshold during peak hours
+                optimizations['scaling_adjustments']['scale_up_threshold'] = 0.6
+            else:
+                # Higher threshold during off-peak
+                optimizations['scaling_adjustments']['scale_up_threshold'] = 0.8
+                
+        return {
+            'status': 'optimizations_generated',
+            'optimizations': optimizations,
+            'analysis': analysis
+        }
+
+
+class AdaptiveLoadBalancer:
+    """Generation 3 Adaptive Load Balancer with ML-driven routing decisions."""
+    
+    def __init__(self, workers: List[str]):
+        self.workers = workers
+        self.worker_stats = {worker: {
+            'load': 0.0,
+            'response_times': deque(maxlen=100),
+            'error_rates': deque(maxlen=100),
+            'last_used': 0.0
+        } for worker in workers}
+        self.routing_algorithm = 'adaptive_weighted'
+        self.lock = threading.Lock()
+        
+    def select_worker(self, request_complexity: float = 1.0) -> str:
+        """Select optimal worker using adaptive algorithm."""
+        with self.lock:
+            if self.routing_algorithm == 'adaptive_weighted':
+                return self._adaptive_weighted_selection(request_complexity)
+            elif self.routing_algorithm == 'least_response_time':
+                return self._least_response_time_selection()
+            else:  # Default to round-robin
+                return self._round_robin_selection()
+                
+    def _adaptive_weighted_selection(self, request_complexity: float) -> str:
+        """Select worker based on adaptive weighting algorithm."""
+        scores = {}
+        current_time = time.time()
+        
+        for worker in self.workers:
+            stats = self.worker_stats[worker]
+            
+            # Calculate adaptive score
+            load_score = 1.0 - stats['load']  # Lower load = higher score
+            
+            # Response time score
+            if stats['response_times']:
+                avg_response_time = np.mean(stats['response_times'])
+                max_response_time = max(stats['response_times'])
+                response_score = 1.0 / (1.0 + avg_response_time)
+            else:
+                response_score = 1.0
+                
+            # Error rate score
+            if stats['error_rates']:
+                avg_error_rate = np.mean(stats['error_rates'])
+                error_score = 1.0 - avg_error_rate
+            else:
+                error_score = 1.0
+                
+            # Freshness score (prefer workers not used recently)
+            time_since_last_use = current_time - stats['last_used']
+            freshness_score = min(1.0, time_since_last_use / 60.0)  # Max benefit after 1 minute
+            
+            # Complexity adjustment
+            complexity_factor = 1.0 + (request_complexity - 1.0) * 0.5
+            
+            # Weighted combination
+            final_score = (
+                load_score * 0.4 +
+                response_score * 0.3 +
+                error_score * 0.2 +
+                freshness_score * 0.1
+            ) * complexity_factor
+            
+            scores[worker] = final_score
+            
+        # Select worker with highest score
+        best_worker = max(scores.items(), key=lambda x: x[1])[0]
+        self.worker_stats[best_worker]['last_used'] = current_time
+        
+        return best_worker
+        
+    def _least_response_time_selection(self) -> str:
+        """Select worker with lowest average response time."""
+        best_worker = self.workers[0]
+        best_time = float('inf')
+        
+        for worker in self.workers:
+            stats = self.worker_stats[worker]
+            if stats['response_times']:
+                avg_time = np.mean(stats['response_times'])
+            else:
+                avg_time = 0.0
+                
+            if avg_time < best_time:
+                best_time = avg_time
+                best_worker = worker
+                
+        return best_worker
+        
+    def _round_robin_selection(self) -> str:
+        """Simple round-robin selection."""
+        # Find least recently used worker
+        return min(self.workers, key=lambda w: self.worker_stats[w]['last_used'])
+        
+    def update_worker_stats(self, worker: str, response_time: float, 
+                          error_occurred: bool, current_load: float):
+        """Update worker statistics."""
+        with self.lock:
+            if worker in self.worker_stats:
+                stats = self.worker_stats[worker]
+                stats['response_times'].append(response_time)
+                stats['error_rates'].append(1.0 if error_occurred else 0.0)
+                stats['load'] = current_load
+                
+    def get_load_balancer_stats(self) -> Dict[str, Any]:
+        """Get load balancer statistics."""
+        with self.lock:
+            worker_summaries = {}
+            for worker, stats in self.worker_stats.items():
+                avg_response_time = np.mean(stats['response_times']) if stats['response_times'] else 0.0
+                avg_error_rate = np.mean(stats['error_rates']) if stats['error_rates'] else 0.0
+                
+                worker_summaries[worker] = {
+                    'current_load': stats['load'],
+                    'avg_response_time': avg_response_time,
+                    'avg_error_rate': avg_error_rate,
+                    'requests_processed': len(stats['response_times']),
+                    'last_used': stats['last_used']
+                }
+                
+            return {
+                'algorithm': self.routing_algorithm,
+                'total_workers': len(self.workers),
+                'worker_stats': worker_summaries
+            }
+
+
 if __name__ == "__main__":
     demo_performance_optimization()
