@@ -241,6 +241,9 @@ class ProcessingPool:
         self.scale_down_threshold = 0.3  # Scale down if utilization < 30%
         self.min_workers = 2
         
+        # Initialize executor
+        self._create_executor(self.max_workers)
+        
     def _create_executor(self, num_workers: int):
         """Create executor with specified number of workers."""
         if self.executor:
@@ -308,6 +311,46 @@ class ProcessingPool:
                 results.append(e)
         
         return results
+    
+    def process_batch(self, func: Callable, batch_data: List[Any]) -> List[Any]:
+        """Process a batch of tasks and return results."""
+        return self.submit_batch(func, batch_data)
+    
+    def submit_async_batch(self, func: Callable, batch_data: List[Any]) -> List[Any]:
+        """Submit batch asynchronously and return futures."""
+        futures = []
+        
+        for data in batch_data:
+            if isinstance(data, (list, tuple)):
+                future = self.submit_task(func, *data)
+            else:
+                future = self.submit_task(func, data)
+            futures.append(future)
+        
+        return futures
+    
+    def wait_for_results(self, futures: List[Any]) -> List[Any]:
+        """Wait for futures to complete and return results."""
+        results = []
+        for future in as_completed(futures):
+            try:
+                result = future.result()
+                results.append(result)
+            except Exception as e:
+                results.append(e)
+        return results
+    
+    def get_stats(self) -> Dict[str, Any]:
+        """Get processing pool statistics."""
+        with self.lock:
+            return {
+                'max_workers': self.max_workers,
+                'active_tasks': self.active_tasks,
+                'completed_tasks': self.completed_tasks,
+                'failed_tasks': self.failed_tasks,
+                'avg_task_time': np.mean(self.task_times) if self.task_times else 0.0,
+                'utilization': self.active_tasks / self.max_workers
+            }
     
     def _check_scaling(self):
         """Check if pool should be scaled."""
@@ -593,3 +636,44 @@ def cached(cache_key: str = None, ttl: float = None):
 def parallel(use_processes: bool = False):
     """Convenience decorator for parallel processing."""
     return _performance_optimizer.parallel_operation(use_processes)
+
+
+@dataclass
+class WorkerNode:
+    """Represents a worker node in load balancing."""
+    name: str
+    capacity: int
+    current_load: int = 0
+    health_score: float = 1.0
+    last_used: float = field(default_factory=time.time)
+
+
+class LoadBalancer:
+    """Load balancer for distributing tasks across worker nodes."""
+    
+    def __init__(self, nodes: List[WorkerNode], algorithm: str = "round_robin"):
+        self.nodes = nodes
+        self.algorithm = algorithm
+        self.current_index = 0
+        self.lock = threading.Lock()
+        
+    def select_node(self, task: Any) -> WorkerNode:
+        """Select best node for task."""
+        with self.lock:
+            if self.algorithm == "round_robin":
+                node = self.nodes[self.current_index]
+                self.current_index = (self.current_index + 1) % len(self.nodes)
+                node.last_used = time.time()
+                return node
+            elif self.algorithm == "least_loaded":
+                return min(self.nodes, key=lambda n: n.current_load)
+            else:
+                return self.nodes[0]  # Default
+    
+    def get_stats(self) -> Dict[str, Any]:
+        """Get load balancer statistics."""
+        return {
+            'total_nodes': len(self.nodes),
+            'algorithm': self.algorithm,
+            'nodes': [{'name': n.name, 'load': n.current_load, 'capacity': n.capacity} for n in self.nodes]
+        }

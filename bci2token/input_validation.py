@@ -28,10 +28,20 @@ class SanitizationError(BCIError):
 
 class AnomalyLevel(Enum):
     """Anomaly detection levels."""
-    NORMAL = "normal"
-    SUSPICIOUS = "suspicious"
-    ANOMALOUS = "anomalous"
-    CRITICAL = "critical"
+    NORMAL = 1
+    SUSPICIOUS = 2
+    ANOMALOUS = 3
+    CRITICAL = 4
+    
+    def __lt__(self, other):
+        if self.__class__ is other.__class__:
+            return self.value < other.value
+        return NotImplemented
+    
+    def __le__(self, other):
+        if self.__class__ is other.__class__:
+            return self.value <= other.value
+        return NotImplemented
 
 
 @dataclass

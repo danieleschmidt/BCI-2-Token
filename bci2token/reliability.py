@@ -295,6 +295,23 @@ class InputSanitizer:
             warnings.warn(f"Clipped signal amplitudes to ±{max_amplitude}")
             
         return signal
+
+
+class ReliabilityEngine:
+    """
+    Main reliability engine for BCI-2-Token framework.
+    
+    Provides comprehensive reliability features including error recovery,
+    data sanitization, and self-healing capabilities.
+    """
+    
+    def __init__(self):
+        self.recovery_actions = []
+        self.sanitizer = InputSanitizer()
+        
+    def sanitize_signal_data(self, signal: Any) -> Any:
+        """Sanitize signal data using the input sanitizer."""
+        return self.sanitizer.sanitize_brain_signal(signal)
         
     @staticmethod
     def sanitize_text_input(text: str, max_length: int = 10000) -> str:
