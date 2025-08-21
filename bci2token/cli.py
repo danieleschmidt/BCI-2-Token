@@ -12,12 +12,52 @@ from pathlib import Path
 import numpy as np
 from typing import Optional, Dict, Any
 
-from . import BrainDecoder, LLMInterface, StreamingDecoder
-from .devices import create_device, DeviceConfig
-from .streaming import StreamingConfig
-from .training import BrainDecoderTrainer, TrainingConfig, BrainTextDataset
-from .models import ModelConfig
-from .preprocessing import PreprocessingConfig
+try:
+    from . import BrainDecoder, LLMInterface, StreamingDecoder
+    _HAS_CORE = True
+except ImportError:
+    BrainDecoder = None
+    LLMInterface = None
+    StreamingDecoder = None
+    _HAS_CORE = False
+
+try:
+    from .devices import create_device, DeviceConfig
+    _HAS_DEVICES = True
+except ImportError:
+    create_device = None
+    DeviceConfig = None
+    _HAS_DEVICES = False
+
+try:
+    from .streaming import StreamingConfig
+    _HAS_STREAMING = True
+except ImportError:
+    StreamingConfig = None
+    _HAS_STREAMING = False
+
+try:
+    from .training import BrainDecoderTrainer, TrainingConfig, BrainTextDataset
+    _HAS_TRAINING = True
+except ImportError:
+    BrainDecoderTrainer = None
+    TrainingConfig = None
+    BrainTextDataset = None
+    _HAS_TRAINING = False
+
+try:
+    from .models import ModelConfig
+    _HAS_MODELS = True
+except ImportError:
+    ModelConfig = None
+    _HAS_MODELS = False
+
+try:
+    from .preprocessing import PreprocessingConfig
+    _HAS_PREPROCESSING = True
+except ImportError:
+    PreprocessingConfig = None
+    _HAS_PREPROCESSING = False
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -70,6 +110,7 @@ def create_parser() -> argparse.ArgumentParser:
     # Info command
     info_parser = subparsers.add_parser('info', help='Show system information')
     info_parser.add_argument('--model-path', help='Show information about specific model')
+    info_parser.add_argument('--health', action='store_true', help='Run health diagnostics')
     
     # Test command
     test_parser = subparsers.add_parser('test', help='Run system tests')
@@ -279,11 +320,24 @@ def cmd_info(args) -> int:
         print("=" * 40)
         
         # System info
-        import torch
-        print(f"PyTorch version: {torch.__version__}")
-        print(f"CUDA available: {torch.cuda.is_available()}")
-        if torch.cuda.is_available():
-            print(f"CUDA devices: {torch.cuda.device_count()}")
+        try:
+            import torch
+            print(f"PyTorch version: {torch.__version__}")
+            print(f"CUDA available: {torch.cuda.is_available()}")
+            if torch.cuda.is_available():
+                print(f"CUDA devices: {torch.cuda.device_count()}")
+        except ImportError:
+            print("PyTorch: Not available (using mock implementation)")
+            
+        # Check health if requested
+        if hasattr(args, 'health') and args.health:
+            from .health import run_comprehensive_diagnostics
+            print("\nHealth Diagnostics:")
+            print("-" * 20)
+            health_results = run_comprehensive_diagnostics()
+            for check_name, result in health_results.items():
+                status = "✓" if result.level.value == "healthy" else "✗"
+                print(f"  {status} {check_name}: {result.message}")
             
         # Try to import optional dependencies
         deps = {
@@ -324,6 +378,31 @@ def cmd_test(args) -> int:
     """Handle test command."""
     try:
         print("Running BCI-2-Token system tests...")
+        
+        # Check if core components are available  
+        if BrainDecoder is None:
+            print("⚠️  Core components not available (missing PyTorch)")
+            print("   Running limited functionality tests...")
+            
+            # Test preprocessing
+            print("1. Testing signal preprocessing...")
+            try:
+                from .preprocessing import PreprocessingConfig, SignalPreprocessor
+                config = PreprocessingConfig(sampling_rate=256)
+                preprocessor = SignalPreprocessor(config)
+                print("   ✓ Preprocessor initialized successfully")
+            except ImportError as e:
+                print(f"   ✗ Preprocessor not available: {e}")
+                return 1
+                
+            # Test health monitoring
+            print("2. Testing health monitoring...")
+            from .health import run_comprehensive_diagnostics
+            health_results = run_comprehensive_diagnostics()
+            print(f"   ✓ Health checks completed ({len(health_results)} checks)")
+            
+            print("\nLimited tests passed! Install PyTorch for full functionality.")
+            return 0
         
         # Basic functionality test
         print("1. Testing basic decoder initialization...")

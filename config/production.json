@@ -61,6 +61,25 @@
     "ttl": 3600.0,
     "enable_clustering": false
   },
+  "logging": {
+    "level": "WARNING",
+    "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    "file": "/app/logs/bci2token.log",
+    "max_size": "100MB",
+    "backup_count": 5,
+    "enable_console": true,
+    "enable_structured": true
+  },
+  "performance": {
+    "enable_caching": true,
+    "cache_max_size": 10000,
+    "enable_compression": true,
+    "enable_optimization": true,
+    "batch_processing": true,
+    "max_batch_size": 100,
+    "async_processing": true,
+    "connection_pooling": true
+  },
   "monitoring": {
     "enable_metrics": true,
     "enable_tracing": true,

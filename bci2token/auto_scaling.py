@@ -90,6 +90,51 @@ class AutoScaler:
         # Thread safety
         self.lock = threading.RLock()
         
+    def make_scaling_decision(self, metrics: ScalingMetrics) -> Optional[Dict[str, Any]]:
+        """Make scaling decision based on metrics."""
+        with self.lock:
+            self.metrics_history.append(metrics)
+            
+            # Check cooling period
+            if time.time() - self.last_scaling_time < 60:  # 1 minute cooldown
+                return None
+            
+            # Apply scaling rules
+            for rule in sorted(self.scaling_rules, key=lambda r: r.priority):
+                metric_value = getattr(metrics, rule.metric)
+                
+                if rule.direction == ScalingDirection.UP:
+                    if metric_value > rule.threshold and self.current_workers < self.max_workers:
+                        decision = {
+                            'direction': 'up',
+                            'rule': rule.name,
+                            'current_workers': self.current_workers,
+                            'new_workers': min(int(self.current_workers * self.scale_factor), self.max_workers),
+                            'metric_value': metric_value,
+                            'threshold': rule.threshold
+                        }
+                        self.scaling_decisions.append(decision)
+                        return decision
+                
+                elif rule.direction == ScalingDirection.DOWN:
+                    if metric_value < rule.threshold and self.current_workers > self.min_workers:
+                        decision = {
+                            'direction': 'down',
+                            'rule': rule.name,
+                            'current_workers': self.current_workers,
+                            'new_workers': max(int(self.current_workers / self.scale_factor), self.min_workers),
+                            'metric_value': metric_value,
+                            'threshold': rule.threshold
+                        }
+                        self.scaling_decisions.append(decision)
+                        return decision
+            
+            return None
+    
+    def get_scaling_rules(self) -> List[ScalingRule]:
+        """Get current scaling rules."""
+        return self.scaling_rules.copy()
+        
     def _setup_default_rules(self):
         """Setup default scaling rules."""
         self.scaling_rules = [

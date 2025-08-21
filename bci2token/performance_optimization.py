@@ -13,6 +13,7 @@ import time
 import threading
 import multiprocessing as mp
 import queue
+import functools
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 from dataclasses import dataclass, field
 from collections import OrderedDict, defaultdict, deque
@@ -1347,6 +1348,86 @@ class AdaptiveLoadBalancer:
                 'total_workers': len(self.workers),
                 'worker_stats': worker_summaries
             }
+
+
+class PerformanceOptimizer:
+    """Main performance optimizer with caching and optimization."""
+    
+    def __init__(self, config: PerformanceConfig):
+        self.config = config
+        self.cache = IntelligentCache(
+            max_size=config.cache_max_size,
+            default_ttl=config.cache_ttl_seconds
+        )
+        self.function_cache = {}
+        
+    def optimize_function(self, func: Callable) -> Callable:
+        """Optimize a function with caching."""
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            if self.config.enable_memory_cache:
+                # Generate cache key
+                key = str(args) + str(sorted(kwargs.items()))
+                
+                # Check cache
+                result, hit = self.cache.get(key)
+                if hit:
+                    return result
+                
+                # Execute function
+                result = func(*args, **kwargs)
+                
+                # Cache result
+                self.cache.put(key, result)
+                return result
+            else:
+                return func(*args, **kwargs)
+        
+        return wrapper
+    
+    def get_performance_report(self) -> Dict[str, Any]:
+        """Get performance optimization report."""
+        return {
+            'cache_stats': self.cache.get_statistics(),
+            'operation_times': {}
+        }
+
+
+class MemoryOptimizer:
+    """Memory optimization and garbage collection management."""
+    
+    def __init__(self, config: Optional[PerformanceConfig] = None):
+        self.config = config or PerformanceConfig()
+        
+    def get_memory_stats(self) -> Dict[str, Any]:
+        """Get current memory statistics."""
+        import gc
+        stats = {
+            'gc_collections': sum(gc.get_stats()[0].values()) if hasattr(gc, 'get_stats') else 0,
+            'allocated_mb': 0  # Placeholder
+        }
+        
+        try:
+            import psutil
+            process = psutil.Process()
+            stats['allocated_mb'] = process.memory_info().rss / 1024 / 1024
+        except ImportError:
+            pass
+            
+        return stats
+    
+    def optimize_memory(self):
+        """Trigger memory optimization."""
+        import gc
+        gc.collect()
+        
+    def cleanup_unused_memory(self) -> bool:
+        """Clean up unused memory."""
+        import gc
+        before = len(gc.get_objects())
+        gc.collect()
+        after = len(gc.get_objects())
+        return after < before
 
 
 if __name__ == "__main__":
