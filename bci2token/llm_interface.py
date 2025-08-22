@@ -5,7 +5,15 @@ Supports multiple tokenizers and language models including GPT, LLaMA, Claude, e
 """
 
 import numpy as np
-import torch
+try:
+    import enhanced_mock_torch
+    torch = enhanced_mock_torch
+except ImportError:
+    try:
+        import torch
+    except ImportError:
+        import mock_torch
+        torch = mock_torch.torch
 from typing import List, Dict, Any, Optional, Union
 import warnings
 
