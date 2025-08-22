@@ -321,13 +321,27 @@ def cmd_info(args) -> int:
         
         # System info
         try:
-            import torch
-            print(f"PyTorch version: {torch.__version__}")
+            import enhanced_mock_torch
+            torch = enhanced_mock_torch
+            print(f"PyTorch: Using enhanced mock implementation")
             print(f"CUDA available: {torch.cuda.is_available()}")
             if torch.cuda.is_available():
                 print(f"CUDA devices: {torch.cuda.device_count()}")
         except ImportError:
-            print("PyTorch: Not available (using mock implementation)")
+            try:
+                import torch
+                print(f"PyTorch version: {torch.__version__}")
+                print(f"CUDA available: {torch.cuda.is_available()}")
+                if torch.cuda.is_available():
+                    print(f"CUDA devices: {torch.cuda.device_count()}")
+            except ImportError:
+                try:
+                    import mock_torch
+                    torch = mock_torch.torch
+                    print("PyTorch: Using basic mock implementation")
+                    print("CUDA available: False")
+                except ImportError:
+                    print("PyTorch: Not available (no mock implementation)")
             
         # Check health if requested
         if hasattr(args, 'health') and args.health:

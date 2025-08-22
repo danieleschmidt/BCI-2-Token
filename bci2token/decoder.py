@@ -5,8 +5,21 @@ Integrates preprocessing, neural models, and privacy protection
 into a unified interface for brain-to-token decoding.
 """
 
-import torch
-import torch.nn.functional as F
+try:
+    # First try to import the enhanced mock
+    import enhanced_mock_torch
+    torch = enhanced_mock_torch
+    F = enhanced_mock_torch.functional
+except ImportError:
+    try:
+        # Try real PyTorch
+        import torch
+        import torch.nn.functional as F
+    except ImportError:
+        # Fall back to basic mock
+        import mock_torch
+        torch = mock_torch.torch
+        F = mock_torch.F
 import numpy as np
 from typing import Optional, List, Dict, Any, Union
 from pathlib import Path

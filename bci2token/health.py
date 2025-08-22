@@ -259,7 +259,15 @@ def check_disk_space() -> HealthCheck:
 def check_gpu_availability() -> HealthCheck:
     """Check GPU availability for acceleration."""
     try:
-        import torch
+        try:
+            import enhanced_mock_torch
+            torch = enhanced_mock_torch
+        except ImportError:
+            try:
+                import torch
+            except ImportError:
+                import mock_torch
+                torch = mock_torch.torch
         
         if torch.cuda.is_available():
             device_count = torch.cuda.device_count()
@@ -345,7 +353,15 @@ def check_signal_processing_capabilities() -> HealthCheck:
 def check_model_capabilities() -> HealthCheck:
     """Check machine learning model capabilities."""
     try:
-        import torch
+        try:
+            import enhanced_mock_torch
+            torch = enhanced_mock_torch
+        except ImportError:
+            try:
+                import torch
+            except ImportError:
+                import mock_torch
+                torch = mock_torch.torch
         
         # Check if models can be created
         model_features = []
